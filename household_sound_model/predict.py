@@ -10,10 +10,16 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from audio_model import (
-    HOP_SAMPLES, LABELS, PREPROCESSING, SILENCE_RMS, STREAM_RATE, WINDOW_SAMPLES, SoundCNN,
-    fixed_window, read_mono, simulate_thingy_stream, spectrogram,
-)
+try:
+    from audio_model import (
+        HOP_SAMPLES, LABELS, PREPROCESSING, SILENCE_RMS, STREAM_RATE, WINDOW_SAMPLES, SoundCNN,
+        fixed_window, read_mono, simulate_thingy_stream, spectrogram,
+    )
+except ModuleNotFoundError:
+    from household_sound_model.audio_model import (
+        HOP_SAMPLES, LABELS, PREPROCESSING, SILENCE_RMS, STREAM_RATE, WINDOW_SAMPLES, SoundCNN,
+        fixed_window, read_mono, simulate_thingy_stream, spectrogram,
+    )
 
 ROOT = Path(__file__).resolve().parent
 

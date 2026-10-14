@@ -1,0 +1,23 @@
+[project]
+name = "household-sounds-classifier"
+version = "0.1.0"
+description = "Real-time five-score household sound classifier and browser microphone demo"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.3.0",
+    "numpy>=1.26.0",
+    "scipy>=1.11.0",
+    "soundfile>=0.12.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "websockets>=13.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+]
+
+[tool.uv]
+managed = true

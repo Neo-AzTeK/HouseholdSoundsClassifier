@@ -8,10 +8,15 @@ import sys
 import numpy as np
 
 MODEL_DIR = Path(__file__).resolve().parent.parent / "household_sound_model"
-sys.path.insert(0, str(MODEL_DIR))
+if str(MODEL_DIR) not in sys.path:
+    sys.path.insert(0, str(MODEL_DIR))
 
-from audio_model import HOP_SAMPLES, STREAM_RATE, WINDOW_SAMPLES, simulate_thingy_stream  # noqa: E402
-from predict import Predictor  # noqa: E402
+try:
+    from audio_model import HOP_SAMPLES, STREAM_RATE, WINDOW_SAMPLES, simulate_thingy_stream
+    from predict import Predictor
+except ModuleNotFoundError:
+    from household_sound_model.audio_model import HOP_SAMPLES, STREAM_RATE, WINDOW_SAMPLES, simulate_thingy_stream
+    from household_sound_model.predict import Predictor
 
 CHECKPOINT = MODEL_DIR / "artifacts" / "household_sound.pt"
 

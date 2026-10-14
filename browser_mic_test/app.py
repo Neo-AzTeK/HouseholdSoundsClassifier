@@ -8,7 +8,10 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, Response
 
-from streaming import AudioSession, CHECKPOINT, Predictor, classify_browser_window
+try:
+    from streaming import AudioSession, CHECKPOINT, Predictor, classify_browser_window
+except ModuleNotFoundError:
+    from browser_mic_test.streaming import AudioSession, CHECKPOINT, Predictor, classify_browser_window
 
 ROOT = Path(__file__).resolve().parent
 app = FastAPI(title="Household sound microphone test")

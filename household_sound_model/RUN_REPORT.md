@@ -3,8 +3,8 @@
 ## Artifact
 
 - Selected model: `artifacts/household_sound.pt` (324 KB; SHA-256 `3c48fb223f9299bca95e460c998442be912ea7381cdef31875284765a11857e9`)
-- Original, unmixed baseline: `artifacts/household_sound_v1.pt` (SHA-256 `a783621a7fd6ff12cd0de69e5e75b1c4364ebf0990e33b30349e80526af6ed18`)
-- Other candidates: `artifacts/household_sound_v2.pt` is the mixed model before its inference quiet gate was saved in the checkpoint; `artifacts/household_sound_v3.pt` used synthetic quiet training windows and scored worse on held-out speech.
+- Original, unmixed baseline: `artifacts/archive/household_sound_v1.pt` (SHA-256 `a783621a7fd6ff12cd0de69e5e75b1c4364ebf0990e33b30349e80526af6ed18`)
+- Other candidates: `artifacts/archive/household_sound_v2.pt` is the mixed model before its inference quiet gate was saved in the checkpoint; `artifacts/archive/household_sound_v3.pt` used synthetic quiet training windows and scored worse on held-out speech.
 - Metrics: `artifacts/household_sound.metrics.json`
 - Dataset manifest: `data/manifest.jsonl` (SHA-256 `ccd9e76c2aa97f9e9cec1adf52816b2a10292e9f9486f92e89bdd885e155bc14`)
 - Environment: Python 3.12.13, PyTorch 2.14.1+cpu, SciPy 1.18.1, SoundFile 0.14.0, NumPy 2.5.4.

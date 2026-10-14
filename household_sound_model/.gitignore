@@ -1,9 +1,20 @@
+# Virtual environment & Python bytecode
 .venv/
 __pycache__/
-*.pyc
+*.py[cod]
+*.log
+
+# Audio dataset & preprocessing caches (1.4+ GB, re-downloadable via dataset.py)
 data/audio/
 data/cache/
 data/metadata/
 data/inbox/
-artifacts/
-*.log
+
+# Local candidates & historical checkpoints
+artifacts/*.pt
+artifacts/*.metrics.json
+artifacts/archive/
+
+# Explicitly track the active production model and evaluation report
+!artifacts/household_sound.pt
+!artifacts/household_sound.metrics.json

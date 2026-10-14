@@ -2,7 +2,7 @@
 
 This directory contains the household sound model and its training, evaluation, and inference code. Keep all new project files, downloaded data, model artifacts, and notes inside this directory. See `PLAN.md` for the full history of decisions.
 
-The selected checkpoint is `artifacts/household_sound.pt`; the original unmixed model is preserved as `artifacts/household_sound_v1.pt`. `RUN_REPORT.md` records the dataset, commands, metrics, and limitations. Keep these checkpoints available when experimenting with retraining so there is always a usable baseline.
+The selected checkpoint is `artifacts/household_sound.pt`; the original unmixed model is preserved as `artifacts/archive/household_sound_v1.pt`. `RUN_REPORT.md` records the dataset, commands, metrics, and limitations. Keep these checkpoints available when experimenting with retraining so there is always a usable baseline.
 `TRAINING_EXPLAINED.md` explains the data, processing, optimization, validation, inference, and retraining workflow for the selected checkpoint.
 `docs/Household Sound Model.md` is the illustrated Obsidian-compatible technical note. `docs/generate_figures.py` regenerates its plots from CC0 public clips and the actual preprocessing code; keep both figures and source attribution with the note.
 
