@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Household sound · live microphone test</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div class="eyebrow">HOUSEHOLD SOUND MODEL · LOCAL TEST</div>
+      <h1>What does the mic hear?</h1>
+      <p>Live scores from your browser microphone, updated about twice a second.</p>
+    </header>
+
+    <section class="control-panel" aria-label="Microphone controls">
+      <div class="controls">
+        <button id="start" type="button">Start microphone</button>
+        <button id="stop" class="secondary" type="button" disabled>Stop</button>
+      </div>
+      <div class="status-line"><span id="status-dot" class="status-dot"></span><span id="status" role="status">Ready to start</span></div>
+      <div class="mic-level"><span>Input level</span><div class="level-track"><div id="level-bar"></div></div></div>
+      <p class="hint">Allow microphone access when your browser asks. Audio is processed by the server on this computer; the app does not save recordings.</p>
+    </section>
+
+    <section class="results" aria-label="Live category scores">
+      <div class="results-header"><h2>Live scores</h2><span id="updated">Waiting for audio</span></div>
+      <div class="score voice" data-label="voices"><div class="score-top"><strong>Voices</strong><output>0%</output></div><div class="track"><div class="fill"></div></div></div>
+      <div class="score machine" data-label="machines"><div class="score-top"><strong>Machines</strong><output>0%</output></div><div class="track"><div class="fill"></div></div></div>
+      <div class="score collision" data-label="collisions"><div class="score-top"><strong>Collisions</strong><output>0%</output></div><div class="track"><div class="fill"></div></div></div>
+      <div class="score step" data-label="steps"><div class="score-top"><strong>Steps</strong><output>0%</output></div><div class="track"><div class="fill"></div></div></div>
+      <div class="score music" data-label="music"><div class="score-top"><strong>Music</strong><output>0%</output></div><div class="track"><div class="fill"></div></div></div>
+    </section>
+
+    <section class="raw" aria-label="Structured output">
+      <div class="results-header"><h2>Structured output</h2><span>Five independent scores</span></div>
+      <pre id="json-output">{ "voices": 0, "machines": 0, "collisions": 0, "steps": 0, "music": 0 }</pre>
+    </section>
+    <footer>Browser mic audio is shaped to resemble the Thingy:53 stream. Results will differ on the real device.</footer>
+  </main>
+</body>
+</html>

@@ -1,0 +1,34 @@
+name: household-sound-mic
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - type: bind
+        source: ../household_sound_model/audio_model.py
+        target: /workspace/household_sound_model/audio_model.py
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../household_sound_model/predict.py
+        target: /workspace/household_sound_model/predict.py
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../household_sound_model/artifacts/household_sound.pt
+        target: /workspace/household_sound_model/artifacts/household_sound.pt
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

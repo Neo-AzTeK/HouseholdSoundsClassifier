@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+data/audio/
+data/cache/
+data/metadata/
+data/inbox/
+artifacts/
+*.log
