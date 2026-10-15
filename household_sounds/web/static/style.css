@@ -35,6 +35,28 @@ header {
   margin-bottom: 24px;
 }
 
+.warning-banner {
+  background: #451a03;
+  border: 1px solid #d97706;
+  color: #fef3c7;
+  padding: 12px 16px;
+  border-radius: 6px;
+  margin-bottom: 16px;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.warning-banner a {
+  color: #fde68a;
+  font-weight: 600;
+  text-decoration: underline;
+  margin-left: 4px;
+}
+
+.warning-banner a:hover {
+  color: #fff;
+}
+
 h1 {
   font-size: 1.6rem;
   font-weight: 600;

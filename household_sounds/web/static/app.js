@@ -245,5 +245,19 @@ silenceGateCheck.addEventListener('change', e => {
   }
 });
 
+// Check for insecure context (e.g. HTTP across LAN)
+function checkSecureContext() {
+  const isLocalhost = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  if (!window.isSecureContext && !isLocalhost) {
+    const warning = document.getElementById('https-warning');
+    const link = document.getElementById('https-link');
+    if (warning && link) {
+      link.href = `https://${location.hostname}:${location.port || 8000}${location.pathname}`;
+      warning.style.display = 'block';
+    }
+  }
+}
+
 // Initial load
 fetchBackends();
+checkSecureContext();

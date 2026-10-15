@@ -141,32 +141,115 @@ async def audio_socket(websocket: WebSocket) -> None:
             await websocket.close()
 
 
+def get_lan_ip() -> str:
+    """Detect local LAN IP address."""
+    import socket
+
+    for target in ("192.168.178.1", "192.168.1.1", "10.153.58.1", "8.8.8.8"):
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect((target, 80))
+            ip = s.getsockname()[0]
+            s.close()
+            if not ip.startswith("127."):
+                return ip
+        except Exception:
+            continue
+    return "127.0.0.1"
+
+
+def ensure_ssl_certificates(ssl_dir: Path, lan_ip: str) -> tuple[Path, Path]:
+    """Ensure SSL certificates exist, automatically generating self-signed pair if needed."""
+    import subprocess
+
+    ssl_dir.mkdir(parents=True, exist_ok=True)
+    cert_path = ssl_dir / "cert.pem"
+    key_path = ssl_dir / "key.pem"
+
+    if cert_path.is_file() and key_path.is_file():
+        return cert_path, key_path
+
+    print(f"[*] Generating self-signed SSL certificates for {lan_ip} & localhost...")
+    cmd = [
+        "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
+        "-keyout", str(key_path),
+        "-out", str(cert_path),
+        "-days", "365",
+        "-subj", "/CN=HouseholdSoundsClassifier",
+        "-addext", f"subjectAltName=DNS:localhost,IP:127.0.0.1,IP:{lan_ip}",
+    ]
+    try:
+        subprocess.run(cmd, check=True, capture_output=True)
+        print(f"[+] SSL certificates created in {ssl_dir}/")
+    except Exception as exc:
+        print(f"[!] Warning: Failed to generate certificates with openssl ({exc}).")
+        raise
+
+    return cert_path, key_path
+
+
 def main() -> None:
     """CLI launcher for the web demonstration."""
     import uvicorn
 
     parser = argparse.ArgumentParser(description="Household Sound Classifier Web Server")
-    parser.add_argument("--host", default="127.0.0.1", help="Host interface (e.g. 127.0.0.1 or 0.0.0.0)")
+    parser.add_argument("--host", default=None, help="Host interface (e.g. 127.0.0.1 or 0.0.0.0)")
     parser.add_argument("--port", type=int, default=8000, help="Port to listen on (default: 8000)")
-    parser.add_argument("--ssl-certfile", default=None, help="Path to SSL certificate for HTTPS")
-    parser.add_argument("--ssl-keyfile", default=None, help="Path to SSL private key")
+    parser.add_argument(
+        "--network", "--lan",
+        action="store_true",
+        help="Make server accessible across local network (binds 0.0.0.0 and enables auto-SSL)",
+    )
+    parser.add_argument(
+        "--ssl",
+        action="store_true",
+        help="Enable HTTPS using automatically generated self-signed certificate",
+    )
+    parser.add_argument("--ssl-certfile", default=None, help="Path to custom SSL certificate")
+    parser.add_argument("--ssl-keyfile", default=None, help="Path to custom SSL private key")
     parser.add_argument("--reload", action="store_true", help="Enable automatic code reloading")
     args = parser.parse_args()
 
-    protocol = "https" if args.ssl_certfile and args.ssl_keyfile else "http"
-    print("=" * 64)
-    print(f" Starting Household Sound Classifier Demo")
-    print(f" Server URL: {protocol}://{args.host}:{args.port}")
-    print("=" * 64)
+    lan_ip = get_lan_ip()
+    ssl_dir = REPO_ROOT / "ssl"
+
+    # If --network is specified, default host is 0.0.0.0 and SSL is automatically enabled
+    if args.network:
+        host = args.host or "0.0.0.0"
+        use_ssl = True
+    else:
+        host = args.host or "127.0.0.1"
+        use_ssl = bool(args.ssl or (args.ssl_certfile and args.ssl_keyfile))
+
+    certfile = args.ssl_certfile
+    keyfile = args.ssl_keyfile
+
+    if use_ssl and not (certfile and keyfile):
+        cert_p, key_p = ensure_ssl_certificates(ssl_dir, lan_ip)
+        certfile = str(cert_p)
+        keyfile = str(key_p)
+
+    protocol = "https" if certfile and keyfile else "http"
+
+    print("=" * 68)
+    print(f" Household Sound Classifier Web Server")
+    if host == "0.0.0.0":
+        print(f"   Local URL:    {protocol}://localhost:{args.port}")
+        print(f"   Network URL:  {protocol}://{lan_ip}:{args.port}")
+        if protocol == "https":
+            print(f"   Note: Accept the self-signed certificate on your mobile browser.")
+    else:
+        print(f"   Server URL:   {protocol}://{host}:{args.port}")
+    print("=" * 68)
 
     kwargs: dict[str, Any] = {
-        "host": args.host,
+        "host": host,
         "port": args.port,
         "reload": args.reload,
     }
-    if args.ssl_certfile and args.ssl_keyfile:
-        kwargs["ssl_certfile"] = args.ssl_certfile
-        kwargs["ssl_keyfile"] = args.ssl_keyfile
+    if certfile and keyfile:
+        kwargs["ssl_certfile"] = certfile
+        kwargs["ssl_keyfile"] = keyfile
 
     uvicorn.run("household_sounds.web.app:app", **kwargs)
 

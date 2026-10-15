@@ -58,9 +58,22 @@ All commands are run from the project root using [`uv`](https://docs.astral.sh/u
 ### 1. Run the Web Microphone Demo
 
 ```bash
+# Localhost only:
 uv run sound-web
+
+# Or accessible across your local Wi-Fi / network (with auto-generated SSL):
+uv run sound-web --network
 ```
-Open <http://127.0.0.1:8000> in your browser, click **Start Microphone**, and observe real-time classification, latency, and backend controls.
+
+When started with `--network`, the server binds to `0.0.0.0`, automatically generates self-signed SSL certificates in `ssl/` (if missing), and outputs both local and network URLs:
+```text
+====================================================================
+ Household Sound Classifier Web Server
+   Local URL:    https://localhost:8000
+   Network URL:  https://192.168.178.126:8000
+   Note: Accept the self-signed certificate on your mobile browser.
+====================================================================
+```
 
 ### 2. Test Model Inference (CPU or Hailo NPU)
 
@@ -90,15 +103,10 @@ Individual commands:
 
 ## Running on the Raspberry Pi 5 (with HTTPS for Browser Mic)
 
-On the Raspberry Pi 5, the model runs natively via CPU (~3.4 ms latency) or Hailo-10H NPU.
-
-To allow browser microphone access over your local network, start the server with SSL certificates:
+On the Raspberry Pi 5, simply run:
 
 ```bash
-uv run sound-web \
-  --host 0.0.0.0 --port 8000 \
-  --ssl-certfile ssl/cert.pem \
-  --ssl-keyfile ssl/key.pem
+uv run sound-web --network
 ```
 
 Then navigate to **`https://pi-team5.local:8000`** in your browser.
