@@ -33,7 +33,6 @@ The model scores 5 independent categories simultaneously:
 └── browser_mic_test/           # Live browser microphone demonstration
     ├── app.py                  # FastAPI server with WebSocket audio streaming
     ├── streaming.py            # Audio session buffering and sliding-window feeder
-    ├── compose.yaml            # Docker Compose service definition
     └── static/                 # Browser audio worklet & real-time visualizer
 ```
 
@@ -67,15 +66,19 @@ uv run --python household_sound_model/.venv/bin/python python -m uvicorn browser
 
 Open <http://127.0.0.1:8000> in your browser, click **Start microphone**, and observe real-time classification bars.
 
-### 3. Run with Docker Compose
+### 3. Run on the Raspberry Pi 5 (with HTTPS for Browser Mic)
 
-If you prefer running the web interface in an isolated container:
+On the Raspberry Pi 5, the model runs natively via `uv` (~3.4 ms latency). To allow browser microphone access over the local network, run with the generated SSL certificate:
 
 ```bash
-docker compose -f browser_mic_test/compose.yaml up -d --build
+cd ~/HouseholdSoundsClassifier/browser_mic_test
+nohup ../.venv/bin/python -m uvicorn app:app \
+  --host 0.0.0.0 --port 8000 \
+  --ssl-keyfile ~/HouseholdSoundsClassifier/ssl/key.pem \
+  --ssl-certfile ~/HouseholdSoundsClassifier/ssl/cert.pem &
 ```
 
-Then visit <http://127.0.0.1:8000>.
+Then visit **`https://pi-team5.local:8000`** in your browser.
 
 ---
 
