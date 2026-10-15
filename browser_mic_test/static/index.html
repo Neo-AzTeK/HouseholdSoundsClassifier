@@ -3,42 +3,132 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Household sound · live microphone test</title>
+  <title>Household Sound Classifier</title>
   <link rel="stylesheet" href="/static/style.css">
   <script src="/static/app.js" defer></script>
 </head>
 <body>
-  <main class="shell">
+  <div class="container">
     <header>
-      <div class="eyebrow">HOUSEHOLD SOUND MODEL · LOCAL TEST</div>
-      <h1>What does the mic hear?</h1>
-      <p>Live scores from your browser microphone, updated about twice a second.</p>
+      <h1>Household Sound Classifier</h1>
+      <p class="subtitle">Live acoustic event detection · Raspberry Pi 5 &amp; Hailo-10H NPU</p>
     </header>
 
-    <section class="control-panel" aria-label="Microphone controls">
-      <div class="controls">
-        <button id="start" type="button">Start microphone</button>
-        <button id="stop" class="secondary" type="button" disabled>Stop</button>
+    <!-- Controls & Status -->
+    <section class="card">
+      <div class="card-header">
+        <h2>Audio Input</h2>
+        <span id="status-badge" class="badge">Ready</span>
       </div>
-      <div class="status-line"><span id="status-dot" class="status-dot"></span><span id="status" role="status">Ready to start</span></div>
-      <div class="mic-level"><span>Input level</span><div class="level-track"><div id="level-bar"></div></div></div>
-      <p class="hint">Allow microphone access when your browser asks. Audio is processed by the server on this computer; the app does not save recordings.</p>
+
+      <div class="button-group">
+        <button id="start" type="button" class="btn btn-primary">Start Microphone</button>
+        <button id="stop" type="button" class="btn btn-secondary" disabled>Stop</button>
+      </div>
+
+      <div class="meter-group">
+        <label for="level-bar">Input Level</label>
+        <div class="meter-track">
+          <div id="level-bar" class="meter-fill"></div>
+        </div>
+      </div>
+      <p class="note">Requires microphone permission. Audio is processed in real time and is never stored.</p>
     </section>
 
-    <section class="results" aria-label="Live category scores">
-      <div class="results-header"><h2>Live scores</h2><span id="updated">Waiting for audio</span></div>
-      <div class="score voice" data-label="voices"><div class="score-top"><strong>Voices</strong><output>0%</output></div><div class="track"><div class="fill"></div></div></div>
-      <div class="score machine" data-label="machines"><div class="score-top"><strong>Machines</strong><output>0%</output></div><div class="track"><div class="fill"></div></div></div>
-      <div class="score collision" data-label="collisions"><div class="score-top"><strong>Collisions</strong><output>0%</output></div><div class="track"><div class="fill"></div></div></div>
-      <div class="score step" data-label="steps"><div class="score-top"><strong>Steps</strong><output>0%</output></div><div class="track"><div class="fill"></div></div></div>
-      <div class="score music" data-label="music"><div class="score-top"><strong>Music</strong><output>0%</output></div><div class="track"><div class="fill"></div></div></div>
+    <!-- Runtime & Backend Tooling -->
+    <section class="card">
+      <div class="card-header">
+        <h2>Inference Backend &amp; Controls</h2>
+        <span id="latency-badge" class="badge badge-info">Latency: --</span>
+      </div>
+
+      <div class="control-row">
+        <label class="control-label">Execution Backend</label>
+        <div class="segmented-control">
+          <label class="segment">
+            <input type="radio" name="backend" value="cpu" id="radio-cpu" checked>
+            <span>CPU (PyTorch)</span>
+          </label>
+          <label class="segment" id="segment-npu">
+            <input type="radio" name="backend" value="npu" id="radio-npu">
+            <span>Hailo NPU (Hailo-10H)</span>
+          </label>
+        </div>
+      </div>
+      <div id="backend-status-note" class="note">Active: CPU (PyTorch)</div>
+
+      <div class="control-row">
+        <label for="threshold-slider" class="control-label">Detection Threshold: <strong id="threshold-val">50%</strong></label>
+        <input type="range" id="threshold-slider" min="10" max="90" value="50" step="5">
+      </div>
+
+      <div class="control-row checkbox-row">
+        <label>
+          <input type="checkbox" id="silence-gate" checked>
+          <span>Enable silence gate (suppress noise below baseline)</span>
+        </label>
+      </div>
     </section>
 
-    <section class="raw" aria-label="Structured output">
-      <div class="results-header"><h2>Structured output</h2><span>Five independent scores</span></div>
-      <pre id="json-output">{ "voices": 0, "machines": 0, "collisions": 0, "steps": 0, "music": 0 }</pre>
+    <!-- Prediction Scores -->
+    <section class="card">
+      <div class="card-header">
+        <h2>Detection Scores</h2>
+        <span id="updated-text" class="timestamp">Waiting for audio...</span>
+      </div>
+
+      <div class="scores-list">
+        <div class="score-row" data-label="voices">
+          <div class="score-info">
+            <span class="label-name">Voices</span>
+            <span class="score-percent">0%</span>
+          </div>
+          <div class="bar-track"><div class="bar-fill"></div></div>
+        </div>
+
+        <div class="score-row" data-label="machines">
+          <div class="score-info">
+            <span class="label-name">Machines</span>
+            <span class="score-percent">0%</span>
+          </div>
+          <div class="bar-track"><div class="bar-fill"></div></div>
+        </div>
+
+        <div class="score-row" data-label="collisions">
+          <div class="score-info">
+            <span class="label-name">Collisions</span>
+            <span class="score-percent">0%</span>
+          </div>
+          <div class="bar-track"><div class="bar-fill"></div></div>
+        </div>
+
+        <div class="score-row" data-label="steps">
+          <div class="score-info">
+            <span class="label-name">Steps</span>
+            <span class="score-percent">0%</span>
+          </div>
+          <div class="bar-track"><div class="bar-fill"></div></div>
+        </div>
+
+        <div class="score-row" data-label="music">
+          <div class="score-info">
+            <span class="label-name">Music</span>
+            <span class="score-percent">0%</span>
+          </div>
+          <div class="bar-track"><div class="bar-fill"></div></div>
+        </div>
+      </div>
     </section>
-    <footer>Browser mic audio is shaped to resemble the Thingy:53 stream. Results will differ on the real device.</footer>
-  </main>
+
+    <!-- Raw Diagnostics -->
+    <details class="card card-details">
+      <summary class="details-summary">Raw Telemetry &amp; JSON Output</summary>
+      <pre id="json-output">Waiting for inference data...</pre>
+    </details>
+
+    <footer>
+      Thingy:53 Sound Classification System · Audio resampled and companded to match hardware stream
+    </footer>
+  </div>
 </body>
 </html>

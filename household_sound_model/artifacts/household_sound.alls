@@ -1,0 +1,8 @@
+# Hailo Model Script (.alls) for SoundCNN Household Sound Classifier
+# Target: Hailo-10H (and compatible with Hailo-8 / Hailo-8L)
+
+# Specify target batch size and throughput
+performance_param(fps=10)
+
+# Input layer is a 1-channel log-spectrogram (values roughly in range [0, 8]).
+# No pixel normalization is required because preprocessing is done prior to inference.

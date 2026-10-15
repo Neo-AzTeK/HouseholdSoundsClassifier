@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import sys
+from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -12,13 +13,14 @@ if str(MODEL_DIR) not in sys.path:
     sys.path.insert(0, str(MODEL_DIR))
 
 try:
-    from audio_model import HOP_SAMPLES, STREAM_RATE, WINDOW_SAMPLES, simulate_thingy_stream
+    from audio_model import HOP_SAMPLES, LABELS, STREAM_RATE, WINDOW_SAMPLES, simulate_thingy_stream
     from predict import Predictor
 except ModuleNotFoundError:
-    from household_sound_model.audio_model import HOP_SAMPLES, STREAM_RATE, WINDOW_SAMPLES, simulate_thingy_stream
+    from household_sound_model.audio_model import HOP_SAMPLES, LABELS, STREAM_RATE, WINDOW_SAMPLES, simulate_thingy_stream
     from household_sound_model.predict import Predictor
 
 CHECKPOINT = MODEL_DIR / "artifacts" / "household_sound.pt"
+HEF_FILE = MODEL_DIR / "artifacts" / "household_sound.hef"
 
 
 class AudioSession:
@@ -47,6 +49,11 @@ class AudioSession:
         return windows
 
 
-def classify_browser_window(predictor: Predictor, window: np.ndarray, sample_rate: int) -> dict[str, float]:
+def classify_browser_window(predictor: Predictor, window: np.ndarray, sample_rate: int) -> dict[str, Any]:
     stream = simulate_thingy_stream(window, sample_rate)
-    return predictor.scores(stream)
+    result = predictor.predict(stream)
+    # Merge category keys at root for complete backwards-compatibility with older UI
+    for label, score in result["scores"].items():
+        result[label] = score
+    result["type"] = "prediction"
+    return result
