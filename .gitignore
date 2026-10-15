@@ -1,0 +1,28 @@
+# Virtual environment & Python bytecode
+.venv/
+__pycache__/
+*.py[cod]
+*.log
+
+# Local SSL certificates
+ssl/
+
+# Audio dataset & preprocessing caches (1.4+ GB, fetchable via uv run sound-dataset download)
+data/audio/
+data/cache/
+data/metadata/
+data/inbox/
+
+# Local candidates & compiler scratch files
+artifacts/*.npy
+artifacts/*.har
+artifacts/*.onnx.data
+artifacts/archive/
+
+# Explicitly track active production models and manifest
+!artifacts/household_sound.pt
+!artifacts/household_sound.onnx
+!artifacts/household_sound.alls
+!artifacts/household_sound.hef
+!artifacts/household_sound.metrics.json
+!data/manifest.jsonl

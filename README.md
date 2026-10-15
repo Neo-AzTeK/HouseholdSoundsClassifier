@@ -15,122 +15,107 @@ The model scores 5 independent categories simultaneously:
 
 ```text
 .
-├── pyproject.toml              # Project dependencies and uv configuration
-├── README.md                   # This overview and quickstart guide
-├── household_sound_model/      # Core ML pipeline, training, Hailo export & inference
-│   ├── audio_model.py          # DSP preprocessing, Thingy stream simulation & CNN
-│   ├── predict.py              # Unified inference engine (CPU + Hailo-10H NPU)
-│   ├── export_onnx.py          # Exports PyTorch checkpoint to ONNX with validation
-│   ├── prepare_calibration.py  # Generates calibration dataset for INT8 PTQ quantization
-│   ├── compile_hef.py          # Hailo DFC compiler script (SDK & CLI modes)
-│   ├── compile_pipeline.sh     # One-step pipeline script: PT -> ONNX -> CALIB -> HEF
-│   ├── train.py                # Multi-label CNN training script
-│   ├── dataset.py              # Reproducible FSD50K subset selector and downloader
-│   ├── artifacts/              # Production models, configs, and metrics
-│   │   ├── household_sound.pt  # Active PyTorch checkpoint (324 KB)
-│   │   ├── household_sound.onnx# Exported static ONNX graph (313 KB)
-│   │   ├── household_sound.alls# Hailo model script
-│   │   ├── household_sound.metrics.json
-│   │   └── archive/            # Historical experiment candidates (v1, v2, v3)
-│   ├── data/
-│   │   └── manifest.jsonl      # Reproducible dataset manifest with licenses
-│   ├── docs/                   # Mathematical diagrams and obsidian documentation
-│   └── RUN_REPORT.md           # Measured metrics, test splits, and run notes
-└── browser_mic_test/           # Live browser microphone demonstration
-    ├── app.py                  # FastAPI server with WebSocket audio streaming & backend controls
-    ├── streaming.py            # Audio session buffering and sliding-window feeder
-    └── static/                 # Clean, responsive Web UI with CPU/NPU switching & telemetry
+├── pyproject.toml              # Unified dependencies, build system & CLI console scripts
+├── README.md                   # Project overview and quickstart guide
+├── .gitignore                  # Single consolidated git ignore
+├── artifacts/                  # Production models & compiled binaries
+│   ├── household_sound.pt      # Active PyTorch checkpoint (324 KB)
+│   ├── household_sound.onnx    # Validated ONNX graph (313 KB)
+│   ├── household_sound.alls    # Hailo model script
+│   ├── household_sound.hef     # Hailo compiled binary (when compiled)
+│   ├── household_sound.metrics.json
+│   └── archive/                # Historical experiment candidates (v1, v2, v3)
+├── data/                       # Dataset manifests & caches (gitignored)
+│   ├── manifest.jsonl          # Reproducible dataset manifest with licenses
+│   └── cache/                  # Preprocessed Thingy-stream audio cache
+├── docs/                       # Project documentation, figures, math notes
+│   ├── assets/                 # Architecture figures and spectrogram plots
+│   ├── TRAINING_EXPLAINED.md   # Mathematical derivations and DSP explanations
+│   └── RUN_REPORT.md           # Benchmark and evaluation report
+└── household_sounds/           # Single standard installable Python package
+    ├── __init__.py             # Exports SoundCNN, Predictor, and constants
+    ├── model.py                # SoundCNN architecture & DSP preprocessing
+    ├── predict.py              # Dual CPU (PyTorch) / NPU (Hailo) inference engine
+    ├── dataset.py              # FSD50K downloader & dataset loader
+    ├── train.py                # Multi-label CNN training script
+    ├── hailo/                  # Hailo-10H NPU compilation toolchain
+    │   ├── export_onnx.py      # PyTorch -> ONNX export & verification
+    │   ├── calibration.py      # INT8 PTQ calibration dataset generator
+    │   ├── compile.py          # Compile ONNX -> HEF (SDK / CLI / Docker)
+    │   └── pipeline.sh         # 1-step compilation pipeline
+    └── web/                    # Browser microphone test & streaming server
+        ├── app.py              # FastAPI server with WebSocket streaming
+        ├── streaming.py        # Stream buffering & windowing
+        └── static/             # Clean web frontend (HTML/CSS/JS/Worklet)
 ```
 
 ---
 
 ## Quickstart with `uv`
 
-This repository uses [`uv`](https://docs.astral.sh/uv/) for fast, deterministic dependency management.
+All commands are run from the project root using [`uv`](https://docs.astral.sh/uv/):
 
-### 1. Hailo-10H HEF Compilation Pipeline
-
-To export the model and prepare it for the Hailo-10H NPU:
+### 1. Run the Web Microphone Demo
 
 ```bash
-# Run the complete 3-step pipeline (Export ONNX -> Generate Calibration Data -> Compile HEF)
-./household_sound_model/compile_pipeline.sh hailo10h
+uv run sound-web
 ```
+Open <http://127.0.0.1:8000> in your browser, click **Start Microphone**, and observe real-time classification, latency, and backend controls.
 
-Individual steps:
-1. **Export to ONNX**:
-   ```bash
-   uv run python household_sound_model/export_onnx.py
-   ```
-   Validates model graph structure and checks numerical equivalence against PyTorch using ONNX Runtime.
-2. **Generate Calibration Dataset**:
-   ```bash
-   uv run python household_sound_model/prepare_calibration.py --num-samples 128
-   ```
-   Saves real spectrogram slices (`artifacts/calib_set.npy`) for INT8 Post-Training Quantization (PTQ).
-3. **Compile HEF**:
-   ```bash
-   uv run python household_sound_model/compile_hef.py --hw-arch hailo10h
-   ```
-   Compiles via Hailo Dataflow Compiler (DFC) Python API or Hailo CLI tools (`hailo parser onnx`, `hailo optimize`, `hailo compiler`).
-
-### 2. Test Model Inference (CPU or NPU)
-
-Run prediction on a dummy signal or file from anywhere in the repository:
-
-```bash
-uv run --python household_sound_model/.venv/bin/python python household_sound_model/predict.py --help
-```
-
-To run inference on an audio file:
+### 2. Test Model Inference (CPU or Hailo NPU)
 
 ```bash
 # CPU mode:
-uv run --python household_sound_model/.venv/bin/python python household_sound_model/predict.py file path/to/sound.wav --summary
+uv run sound-predict file path/to/sound.wav --summary
 
 # Hailo NPU mode:
-uv run --python household_sound_model/.venv/bin/python python household_sound_model/predict.py --backend npu file path/to/sound.wav --summary
+uv run sound-predict --backend npu file path/to/sound.wav --summary
 ```
 
-### 3. Run the Browser Microphone Demo
+### 3. Hailo-10H HEF Compilation Pipeline
 
-Launch the local FastAPI streaming server:
+Compile the PyTorch checkpoint into a Hailo-10H `.hef` file:
 
 ```bash
-uv run --python household_sound_model/.venv/bin/python python -m uvicorn browser_mic_test.app:app --host 127.0.0.1 --port 8000
+# Run the complete pipeline (Export ONNX -> Generate Calibration Data -> Compile HEF)
+./household_sounds/hailo/pipeline.sh hailo10h
 ```
 
-Open <http://127.0.0.1:8000> in your browser, click **Start microphone**, and observe real-time classification bars and backend telemetry.
-
-### 4. Run on the Raspberry Pi 5 (with HTTPS for Browser Mic)
-
-On the Raspberry Pi 5, the model runs natively via `uv` (~3.4 ms latency). To allow browser microphone access over the local network, run with the generated SSL certificate:
-
-```bash
-cd ~/HouseholdSoundsClassifier/browser_mic_test
-nohup ../.venv/bin/python -m uvicorn app:app \
-  --host 0.0.0.0 --port 8000 \
-  --ssl-keyfile ~/HouseholdSoundsClassifier/ssl/key.pem \
-  --ssl-certfile ~/HouseholdSoundsClassifier/ssl/cert.pem &
-```
-
-Then visit **`https://pi-team5.local:8000`** in your browser.
+Individual commands:
+- **Export to ONNX**: `uv run sound-export`
+- **Generate Calibration Dataset**: `uv run python -m household_sounds.hailo.calibration --num-samples 128`
+- **Compile to HEF**: `uv run sound-compile --hw-arch hailo10h`
 
 ---
 
-## Model Retraining & Dataset Management
+## Running on the Raspberry Pi 5 (with HTTPS for Browser Mic)
 
-1. **Inspect dataset status**:
-   ```bash
-   uv run --python household_sound_model/.venv/bin/python python household_sound_model/dataset.py status
-   ```
-2. **Download required subset clips**:
-   ```bash
-   uv run --python household_sound_model/.venv/bin/python python household_sound_model/dataset.py download --max-gb 5
-   ```
-3. **Train a new candidate model**:
-   ```bash
-   uv run --python household_sound_model/.venv/bin/python python household_sound_model/train.py --epochs 25 --output household_sound_model/artifacts/candidate.pt
-   ```
+On the Raspberry Pi 5, the model runs natively via CPU (~3.4 ms latency) or Hailo-10H NPU.
 
-Detailed signal processing math and training explanations can be found in [`household_sound_model/TRAINING_EXPLAINED.md`](household_sound_model/TRAINING_EXPLAINED.md).
+To allow browser microphone access over your local network, start the server with SSL certificates:
+
+```bash
+uv run sound-web \
+  --host 0.0.0.0 --port 8000 \
+  --ssl-certfile ssl/cert.pem \
+  --ssl-keyfile ssl/key.pem
+```
+
+Then navigate to **`https://pi-team5.local:8000`** in your browser.
+
+---
+
+## Dataset & Training Commands
+
+```bash
+# Inspect dataset status:
+uv run sound-dataset status
+
+# Download required subset clips:
+uv run sound-dataset download --max-gb 5
+
+# Train a new candidate model:
+uv run sound-train --epochs 25 --output artifacts/candidate.pt
+```
+
+For mathematical derivations of the DSP filters, STFT windowing, and companding, see [`docs/TRAINING_EXPLAINED.md`](docs/TRAINING_EXPLAINED.md).

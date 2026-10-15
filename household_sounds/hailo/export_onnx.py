@@ -1,4 +1,4 @@
-"""Export PyTorch SoundCNN checkpoint to ONNX format for Hailo compilation and inference."""
+"""Export PyTorch SoundCNN checkpoint to ONNX format with graph validation."""
 
 from __future__ import annotations
 
@@ -12,15 +12,15 @@ import onnxruntime as ort
 import torch
 from torch import nn
 
-ROOT = Path(__file__).resolve().parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+from household_sounds.model import FRAMES, LABELS, SoundCNN
 
-from audio_model import FRAMES, LABELS, PREPROCESSING, SoundCNN
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+DEFAULT_CHECKPOINT = REPO_ROOT / "artifacts" / "household_sound.pt"
+DEFAULT_OUTPUT = REPO_ROOT / "artifacts" / "household_sound.onnx"
 
 
 class ExportableSoundModel(nn.Module):
-    """Wrapper around SoundCNN that allows optional embedded Sigmoid activation."""
+    """Wrapper around SoundCNN allowing optional embedded Sigmoid activation."""
 
     def __init__(self, base_model: SoundCNN, include_sigmoid: bool = False) -> None:
         super().__init__()
@@ -35,13 +35,16 @@ class ExportableSoundModel(nn.Module):
 
 
 def export_onnx(
-    checkpoint_path: Path,
-    output_path: Path,
+    checkpoint_path: Path = DEFAULT_CHECKPOINT,
+    output_path: Path = DEFAULT_OUTPUT,
     opset: int = 15,
     include_sigmoid: bool = False,
     batch_size: int = 1,
 ) -> Path:
     """Export the trained PyTorch checkpoint to ONNX with validation."""
+    checkpoint_path = Path(checkpoint_path)
+    output_path = Path(output_path)
+
     if not checkpoint_path.is_file():
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
@@ -54,9 +57,7 @@ def export_onnx(
     base_model.load_state_dict(checkpoint["state_dict"])
     model = ExportableSoundModel(base_model, include_sigmoid=include_sigmoid).eval()
 
-    # Model input shape: [batch_size, 1, 129, FRAMES]
     dummy_input = torch.randn(batch_size, 1, 129, FRAMES, dtype=torch.float32)
-
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_name = "probabilities" if include_sigmoid else "logits"
 
@@ -67,20 +68,19 @@ def export_onnx(
         "do_constant_folding": True,
         "input_names": ["input"],
         "output_names": [output_name],
-        "dynamic_axes": None,  # Static shape is optimal for Hailo hardware compilation
+        "dynamic_axes": None,
     }
-    # PyTorch 2.x supports dynamo=False to use TorchScript-based export
     try:
         torch.onnx.export(model, dummy_input, str(output_path), dynamo=False, **export_kwargs)
     except TypeError:
         torch.onnx.export(model, dummy_input, str(output_path), **export_kwargs)
 
-    # 1. Validate ONNX format
+    # Validate ONNX structure
     print("[*] Validating ONNX structure...")
     onnx_model = onnx.load(str(output_path))
     onnx.checker.check_model(onnx_model)
 
-    # 2. Verify with ONNX Runtime against PyTorch
+    # Check numerical equivalence with ONNX Runtime
     print("[*] Checking numerical equivalence with ONNX Runtime...")
     ort_session = ort.InferenceSession(str(output_path), providers=["CPUExecutionProvider"])
     ort_inputs = {ort_session.get_inputs()[0].name: dummy_input.numpy()}
@@ -91,11 +91,6 @@ def export_onnx(
 
     max_diff = float(np.max(np.abs(torch_outs - ort_outs[0])))
     print(f"[+] Export successful! Max absolute difference: {max_diff:.3e}")
-    if max_diff > 1e-4:
-        print(f"[!] Warning: Numerical difference ({max_diff}) is larger than expected.")
-    else:
-        print("[+] Model output matches PyTorch perfectly.")
-
     print(f"[+] Output ONNX saved to: {output_path}")
     print(f"    - Input:  {ort_session.get_inputs()[0].name} {ort_session.get_inputs()[0].shape}")
     print(f"    - Output: {ort_session.get_outputs()[0].name} {ort_session.get_outputs()[0].shape}")
@@ -104,28 +99,13 @@ def export_onnx(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--checkpoint",
-        type=Path,
-        default=ROOT / "artifacts" / "household_sound.pt",
-        help="Path to trained .pt file",
-    )
-    parser.add_argument(
-        "--output",
-        type=Path,
-        default=ROOT / "artifacts" / "household_sound.onnx",
-        help="Target ONNX file path",
-    )
-    parser.add_argument(
-        "--opset",
-        type=int,
-        default=15,
-        help="ONNX opset version (11, 12, 13, 15, 17)",
-    )
+    parser.add_argument("--checkpoint", type=Path, default=DEFAULT_CHECKPOINT)
+    parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument("--opset", type=int, default=15)
     parser.add_argument(
         "--include-sigmoid",
         action="store_true",
-        help="Include sigmoid in the ONNX graph instead of raw logits (Hailo prefers raw logits)",
+        help="Include sigmoid activation directly in ONNX graph (Hailo prefers raw logits)",
     )
     args = parser.parse_args()
 

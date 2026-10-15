@@ -1,22 +1,26 @@
-"""Local browser microphone demo for the household sound model with CPU and NPU controls."""
+"""Local browser microphone demo for household sound classification with CPU and NPU controls."""
 
 from __future__ import annotations
 
+import argparse
 import json
+import os
+import sys
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
-try:
-    from streaming import AudioSession, CHECKPOINT, HEF_FILE, Predictor, classify_browser_window
-except ModuleNotFoundError:
-    from browser_mic_test.streaming import AudioSession, CHECKPOINT, HEF_FILE, Predictor, classify_browser_window
+from household_sounds.predict import Predictor
+from household_sounds.web.streaming import AudioSession, classify_browser_window
 
-ROOT = Path(__file__).resolve().parent
+PACKAGE_DIR = Path(__file__).resolve().parent
+STATIC_DIR = PACKAGE_DIR / "static"
+REPO_ROOT = PACKAGE_DIR.parent.parent
+
 app = FastAPI(title="Household Sound Classifier Demo")
-predictor = Predictor(checkpoint_path=CHECKPOINT, hef_path=HEF_FILE)
+predictor = Predictor()
 
 ASSET_TYPES = {
     "app.js": "text/javascript",
@@ -28,7 +32,7 @@ ASSET_TYPES = {
 @app.get("/")
 async def index() -> HTMLResponse:
     return HTMLResponse(
-        (ROOT / "static" / "index.html").read_text(encoding="utf-8"),
+        (STATIC_DIR / "index.html").read_text(encoding="utf-8"),
         headers={"Cache-Control": "no-store"},
     )
 
@@ -38,7 +42,7 @@ async def static_asset(name: str) -> Response:
     if name not in ASSET_TYPES:
         raise HTTPException(status_code=404)
     return Response(
-        (ROOT / "static" / name).read_bytes(),
+        (STATIC_DIR / name).read_bytes(),
         media_type=ASSET_TYPES[name],
         headers={"Cache-Control": "no-store"},
     )
@@ -48,7 +52,6 @@ async def static_asset(name: str) -> Response:
 async def health() -> dict[str, Any]:
     return {
         "status": "ready",
-        "model": CHECKPOINT.name,
         "backends": predictor.get_backends_info(),
     }
 
@@ -136,3 +139,37 @@ async def audio_socket(websocket: WebSocket) -> None:
     finally:
         if not disconnected:
             await websocket.close()
+
+
+def main() -> None:
+    """CLI launcher for the web demonstration."""
+    import uvicorn
+
+    parser = argparse.ArgumentParser(description="Household Sound Classifier Web Server")
+    parser.add_argument("--host", default="127.0.0.1", help="Host interface (e.g. 127.0.0.1 or 0.0.0.0)")
+    parser.add_argument("--port", type=int, default=8000, help="Port to listen on (default: 8000)")
+    parser.add_argument("--ssl-certfile", default=None, help="Path to SSL certificate for HTTPS")
+    parser.add_argument("--ssl-keyfile", default=None, help="Path to SSL private key")
+    parser.add_argument("--reload", action="store_true", help="Enable automatic code reloading")
+    args = parser.parse_args()
+
+    protocol = "https" if args.ssl_certfile and args.ssl_keyfile else "http"
+    print("=" * 64)
+    print(f" Starting Household Sound Classifier Demo")
+    print(f" Server URL: {protocol}://{args.host}:{args.port}")
+    print("=" * 64)
+
+    kwargs: dict[str, Any] = {
+        "host": args.host,
+        "port": args.port,
+        "reload": args.reload,
+    }
+    if args.ssl_certfile and args.ssl_keyfile:
+        kwargs["ssl_certfile"] = args.ssl_certfile
+        kwargs["ssl_keyfile"] = args.ssl_keyfile
+
+    uvicorn.run("household_sounds.web.app:app", **kwargs)
+
+
+if __name__ == "__main__":
+    main()

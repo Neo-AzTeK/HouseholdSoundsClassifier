@@ -1,9 +1,4 @@
-"""Select a reproducible, expandable five-label subset of FSD50K.
-
-Selection uses the official FSD50K CSV splits and clip metadata. Audio comes from
-the per-clip Fhrozen/FSD50k mirror, so the full 25+ GB dataset is never fetched.
-Run ``python dataset.py --help`` for commands.
-"""
+"""Select a reproducible, expandable five-label subset of FSD50K."""
 
 from __future__ import annotations
 
@@ -16,13 +11,13 @@ import urllib.request
 from collections import Counter
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
+from household_sounds.model import LABELS
+
+ROOT = Path(__file__).resolve().parent.parent
 META = ROOT / "data" / "metadata"
 MANIFEST = ROOT / "data" / "manifest.jsonl"
 BASE = "https://huggingface.co/datasets/Fhrozen/FSD50k/resolve/main"
-LABELS = ("voices", "machines", "collisions", "steps", "music")
 
-# These are source labels, not an exhaustive ontology. Review the selected clips.
 TAGS = {
     "voices": {"Speech", "Conversation", "Whispering", "Yell", "Shout", "Singing"},
     "machines": {"Mechanical_fan", "Microwave_oven", "Printer", "Power_tool", "Drill"},
@@ -44,7 +39,7 @@ def fetch(url: str, dest: Path) -> None:
     if dest.is_file() and dest.stat().st_size > 0:
         return
     tmp = dest.with_name(dest.name + ".partial")
-    request = urllib.request.Request(url, headers={"User-Agent": "household-sound-model/0.1"})
+    request = urllib.request.Request(url, headers={"User-Agent": "household-sounds/0.1"})
     try:
         with urllib.request.urlopen(request, timeout=90) as response, tmp.open("wb") as out:
             shutil.copyfileobj(response, out)

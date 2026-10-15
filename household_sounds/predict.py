@@ -1,4 +1,4 @@
-"""Inference engine supporting both CPU (PyTorch) and Hailo NPU (HailoRT) backends."""
+"""Inference engine supporting CPU (PyTorch) and Hailo NPU (HailoRT) backends."""
 
 from __future__ import annotations
 
@@ -13,38 +13,23 @@ from typing import Any
 import numpy as np
 import torch
 
-try:
-    from audio_model import (
-        HOP_SAMPLES,
-        LABELS,
-        PREPROCESSING,
-        SILENCE_RMS,
-        STREAM_RATE,
-        WINDOW_SAMPLES,
-        SoundCNN,
-        fixed_window,
-        read_mono,
-        simulate_thingy_stream,
-        spectrogram,
-    )
-except ModuleNotFoundError:
-    from household_sound_model.audio_model import (
-        HOP_SAMPLES,
-        LABELS,
-        PREPROCESSING,
-        SILENCE_RMS,
-        STREAM_RATE,
-        WINDOW_SAMPLES,
-        SoundCNN,
-        fixed_window,
-        read_mono,
-        simulate_thingy_stream,
-        spectrogram,
-    )
+from household_sounds.model import (
+    HOP_SAMPLES,
+    LABELS,
+    PREPROCESSING,
+    SILENCE_RMS,
+    STREAM_RATE,
+    WINDOW_SAMPLES,
+    SoundCNN,
+    fixed_window,
+    read_mono,
+    simulate_thingy_stream,
+    spectrogram,
+)
 
-ROOT = Path(__file__).resolve().parent
-DEFAULT_CHECKPOINT = ROOT / "artifacts" / "household_sound.pt"
-DEFAULT_HEF = ROOT / "artifacts" / "household_sound.hef"
+REPO_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_CHECKPOINT = REPO_ROOT / "artifacts" / "household_sound.pt"
+DEFAULT_HEF = REPO_ROOT / "artifacts" / "household_sound.hef"
 
 
 class CpuBackend:
@@ -70,7 +55,6 @@ class CpuBackend:
         """Run inference on spectrogram features shape (1, 129, 48)."""
         x = torch.from_numpy(features)[None, :, :, :]
         logits = self.model(x).numpy()[0]
-        # Sigmoid to convert logits to probabilities
         probs = 1.0 / (1.0 + np.exp(-np.clip(logits, -20.0, 20.0)))
         return probs.astype(np.float32)
 
@@ -87,7 +71,6 @@ class NpuBackend:
         self._infer_model = None
         self._configured_model = None
         self._classic_network_group = None
-        self._classic_vstreams = None
         self._init_hailo()
 
     def _init_hailo(self) -> None:
@@ -103,7 +86,6 @@ class NpuBackend:
             return
 
         try:
-            # Try HailoRT High-Level InferModel API first (HailoRT 4.17+ / 5.x)
             self._vdevice = VDevice()
             if hasattr(self._vdevice, "create_infer_model"):
                 self._infer_model = self._vdevice.create_infer_model(str(self.hef_path))
@@ -111,7 +93,6 @@ class NpuBackend:
                 self._configured_model = self._infer_model.configure()
                 self.api_mode = "infer_model"
             else:
-                # Classic InferVStreams API
                 from hailo_platform import ConfigureParams, HailoStreamInterface, InferVStreams
                 hef = HEF(str(self.hef_path))
                 config_params = ConfigureParams.create_from_hef(hef=hef, interface=HailoStreamInterface.PCIe)
@@ -122,12 +103,9 @@ class NpuBackend:
             self.error_message = f"Failed to initialize Hailo device: {exc}"
 
     def infer(self, features: np.ndarray) -> np.ndarray:
-        """Run inference on spectrogram features using Hailo NPU."""
         if not self.is_ready:
             raise RuntimeError(f"Hailo NPU not ready: {self.error_message}")
 
-        # Features shape: (1, 129, 48) -> Batch dimension (1, 1, 129, 48)
-        # or transposed depending on HEF layout
         batch_input = features[None, :, :, :].astype(np.float32)
 
         if self.api_mode == "infer_model":
@@ -148,7 +126,6 @@ class NpuBackend:
                 res = infer_pipeline.infer({input_name: batch_input})
                 logits = res[output_name].flatten()[:len(LABELS)]
 
-        # Convert logits to probabilities
         probs = 1.0 / (1.0 + np.exp(-np.clip(logits, -20.0, 20.0)))
         return probs.astype(np.float32)
 
@@ -162,10 +139,10 @@ class Predictor:
         hef_path: Path = DEFAULT_HEF,
         backend: str = "cpu",
     ) -> None:
-        self.checkpoint_path = checkpoint_path
-        self.hef_path = hef_path
-        self.cpu = CpuBackend(checkpoint_path)
-        self.npu = NpuBackend(hef_path)
+        self.checkpoint_path = Path(checkpoint_path)
+        self.hef_path = Path(hef_path)
+        self.cpu = CpuBackend(self.checkpoint_path)
+        self.npu = NpuBackend(self.hef_path)
         self.thresholds = dict(self.cpu.thresholds)
         self.silence_rms = self.cpu.silence_rms
         self.use_silence_gate = True
@@ -185,7 +162,6 @@ class Predictor:
             return True, "Switched to CPU (PyTorch)"
         elif target == "npu":
             if not self.npu.is_ready:
-                # Re-check in case HEF was just created
                 self.npu._init_hailo()
             if self.npu.is_ready:
                 self.active_backend_id = "npu"
@@ -242,7 +218,6 @@ class Predictor:
                 backend_used = self.npu.name
                 backend_id = "npu"
             except Exception as e:
-                # Fallback to CPU on runtime NPU failure
                 probs = self.cpu.infer(features)
                 backend_used = f"{self.cpu.name} (fallback: {e})"
                 backend_id = "cpu"
@@ -321,7 +296,7 @@ def live_mode(predictor: Predictor, node_id: int | None) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description="Household sound classifier inference CLI")
     parser.add_argument("--checkpoint", type=Path, default=DEFAULT_CHECKPOINT)
     parser.add_argument("--hef", type=Path, default=DEFAULT_HEF)
     parser.add_argument("--backend", choices=["cpu", "npu"], default="cpu")
