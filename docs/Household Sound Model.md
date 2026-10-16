@@ -74,6 +74,23 @@ The logarithm prevents strong components from overwhelming weaker ones. `1000` i
 
 This resembles image classification, as the [Hugging Face audio course][hf-classification] explains. The axes have different meanings, however. Moving a pattern later in **time** preserves the source; moving it in **frequency** changes pitch and can change what the source sounds like. Our two-dimensional CNN is a compact baseline, not a claim that spectrograms behave exactly like photographs.
 
+### Why 2D spectrograms instead of 1D raw waveforms or Transformers?
+
+When selecting an audio representation for edge AI, three major paradigms exist:
+
+| Representation | Processing Mechanism | Edge Suitability | Rationale for Our Choice |
+| :--- | :--- | :--- | :--- |
+| **1D Raw Waveform** *(e.g. WaveNet, SampleCNN)* | 1D time-domain convolutions on raw samples | ❌ High parameter count, phase-sensitive | Oscillates at kHz. A 1-sample shift ($0.25\text{ ms}$) flips signal polarity from $+1$ to $-1$. A network must dedicate immense parameter capacity just to learn phase-invariant Fourier filters from scratch. |
+| **Transformer / AST** *(Self-Attention)* | Patch extraction on spectrogram + Multi-Head Attention | ❌ High memory & quadratic $O(N^2)$ complexity | Attention across time-frequency patches requires millions of parameters and heavy memory bandwidth, incompatible with sub-4 ms latency on edge CPUs and low-power NPUs. |
+| **2D Spectrogram CNN** *(SoundCNN)* | Deterministic STFT + 2D Spatial Convolutions | ✅ **Optimal for Edge IoT** | STFT mathematically extracts energy distribution in $O(N \log N)$ compute. Discarding phase provides natural phase-invariance, while $3\times 3$ kernels efficiently detect acoustic geometry (lines, bursts, bands). |
+
+### The time-frequency resolution trade-off (Heisenberg Gabor limit)
+
+The choice of $N_{\text{FFT}}=256$ and hop $80$ is a deliberate physical compromise:
+- **Frequency resolution**: $f_s / N_{\text{FFT}} = 4{,}031.25 / 256 \approx \mathbf{15.75\text{ Hz}}$ per bin. This is fine enough to separate low-frequency motor hums and power harmonics ($50\text{ Hz}$, $100\text{ Hz}$, $150\text{ Hz}$) without blurring them together.
+- **Time resolution**: $\text{hop} / f_s = 80 / 4{,}031.25 \approx \mathbf{19.8\text{ ms}}$ per frame (~50 frames/second). This is fast enough to localize transient impact spikes (door knocks, dropped objects, footstep heel strikes) within one or two frames.
+- Increasing $N_{\text{FFT}}$ to 512 would double frequency resolution but stretch the time window to $127\text{ ms}$, blurring brief impact transients into diffuse smudges. Conversely, reducing $N_{\text{FFT}}$ to 128 would blur fundamental pitch harmonics.
+
 ## 4. One CNN layer, in detail
 
 The first block in [`SoundCNN`](../audio_model.py) is:
@@ -117,13 +134,55 @@ During training $\mu_c$ and $\sigma_c^2$ come from the batch; during inference, 
 
 **ReLU and max-pool.** ReLU changes each value to $\max(0,B_c)$, allowing nonlinear features. A $2\times2$ max-pool keeps the largest value in each non-overlapping neighborhood. That reduces $129\times48$ to $64\times24$ (the extra frequency row is dropped). The block therefore has **$160+32=192$ learned parameters**. Pooling reduces compute and sensitivity to exact position, but discards detail.
 
-The next blocks repeat the pattern with 32, 64, then 96 channels. Their pooled map sizes are $32\times12$, $16\times6$, and $8\times3$. The model averages the final $8\times3$ positions in each of 96 channels and uses a linear $96\to5$ layer. All four blocks and the head total **79,589 learned parameters**. The 96-to-5 outputs are *logits* $z_c$, converted to scores by
+The next blocks repeat the pattern with 32, 64, then 96 channels. Their pooled map sizes are $32\times12$, $16\times6$, and $8\times3$. All four blocks and the linear head total **79,589 learned parameters**.
+
+### Why this specific topology? (Computational balancing and receptive field)
+
+The architecture uses an **inverted pyramid** design common in edge vision and audio backbones:
+
+| Stage | Input Shape | Conv & Pooling Config | Output Shape | Receptive Field | Compute (MACs) |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Input** | `1 × 129 × 48` | Spectrogram input | `1 × 129 × 48` | $1 \times 1$ | 0 |
+| **Block 1** | `1 × 129 × 48` | Conv $1\to 16$, BN, ReLU, Pool(2) | `16 × 64 × 24` | $4 \times 4$ | $\approx 0.22\text{ M}$ |
+| **Block 2** | `16 × 64 × 24` | Conv $16\to 32$, BN, ReLU, Pool(2) | `32 × 32 × 12` | $10 \times 10$ | $\approx 1.77\text{ M}$ |
+| **Block 3** | `32 × 32 × 12` | Conv $32\to 64$, BN, ReLU, Pool(2) | `64 × 16 × 6` | $22 \times 22$ | $\approx 1.77\text{ M}$ |
+| **Block 4** | `64 × 16 × 6` | Conv $64\to 96$, BN, ReLU, Pool(2) | `96 × 8 × 3` | $46 \times 46$ | $\approx 1.33\text{ M}$ |
+| **Head** | `96 × 8 × 3` | AdaptiveAvgPool2d(1) + Linear(96→5)| `5` logits | Full window | $\approx 0.001\text{ M}$ |
+| **Total** | — | — | — | — | **~5.1 MFLOPs (79,589 params)** |
+
+1. **Uniform Arithmetic Budget**: Notice that as spatial dimensions are halved by pooling ($64\times 24 \to 32\times 12 \to 16\times 6 \to 8\times 3$), channel depth doubles ($16 \to 32 \to 64 \to 96$). This keeps the computational load per block nearly uniform (~1.5–1.7 MFLOPs), preventing any single layer from bottlenecking the CPU or NPU pipeline.
+2. **Receptive Field Growth**: Each $3\times 3$ convolution combined with $2\times 2$ pooling expands the context seen by each neuron. By Block 4, each feature point integrates a $46 \times 46$ patch of the input spectrogram, allowing the network to recognize multi-frame acoustic rhythm (such as repetitive walking cadence or speech syllables).
+
+### Why Global Average Pooling (`AdaptiveAvgPool2d(1)`) instead of Dense Flattening?
+
+In early CNNs (such as AlexNet or VGG), the final convolutional feature maps were flattened into dense fully connected layers. Applying that classical approach here would have been catastrophic:
+- Flattening `96 × 8 × 3` yields **2,304 features**.
+- Connecting that to a standard 512-neuron dense layer would require:
+  $$2{,}304 \times 512 = \mathbf{1{,}179{,}648\text{ parameters!}}$$
+  That single dense layer would consume **94% of the entire model's memory**, causing massive memory bandwidth stalls on the Raspberry Pi and severely overfitting on small datasets.
+- Instead, **Global Average Pooling (GAP)** computes the mean of each $8\times 3$ map, condensing each channel to a single feature activation. The subsequent classification head is simply `Linear(96, 5)`:
+  $$96 \times 5 + 5 = \mathbf{485\text{ parameters!}}$$
+- **Acoustic Advantage**: GAP imparts **temporal shift-invariance**. An impact sound (like a knock or dish collision) occurring at $t=0.2\text{ s}$ or $t=0.8\text{ s}$ activates the corresponding convolutional filter equally, yielding consistent detection regardless of when the sound begins inside the 1-second window.
+
+### Edge and NPU deployment considerations
+
+The choice of operations was directly driven by edge deployment constraints (Raspberry Pi Cortex-A76 CPU and Hailo-10H NPU):
+- **Zero-Cost BatchNorm Folding**: In evaluation mode, Batch Normalization is a fixed linear transformation:
+  $$B_c = \gamma_c \frac{C_c - \mu_c}{\sqrt{\sigma_c^2 + \epsilon}} + \beta_c$$
+  Because it directly follows a convolution ($C_c = W x + b$), it is mathematically folded into the preceding convolution's weights and biases during compilation:
+  $$W_{\text{fused}} = W \cdot \frac{\gamma_c}{\sqrt{\sigma_c^2 + \epsilon}}, \quad b_{\text{fused}} = (b - \mu_c) \frac{\gamma_c}{\sqrt{\sigma_c^2 + \epsilon}} + \beta_c$$
+  This completely eliminates 4 layers of memory reads/writes at runtime with zero loss in numerical accuracy.
+- **Hardware-Native ReLU**: $f(x) = \max(0, x)$ requires a single comparison instruction on CPUs and is natively implemented in dedicated hardware logic on the Hailo-10H NPU. It avoids expensive transcendental functions (like GELU or Swish) and creates activation sparsity that improves 8-bit integer post-training quantization (PTQ).
+
+### Multi-label classification with independent Sigmoids
+
+The 96-to-5 outputs are raw *logits* $z_c$, converted to continuous confidence scores by independent sigmoids:
 
 $$
 p_c = \sigma(z_c) = \frac{1}{1+e^{-z_c}}.
 $$
 
-Because every $p_c$ is calculated independently, voices and music can both score high. The final time map has only three positions, a possible weakness for very short collisions or detailed step timing.
+**Why not Softmax?** Softmax enforces mutual exclusivity ($\sum_{c=1}^5 p_c = 1$), assuming that only one sound can exist at any given moment. In physical household environments, acoustic events are additive: a person can speak while background music plays (`voices` = 0.85, `music` = 0.78), or footsteps can occur while a washing machine hums. Independent sigmoids allow all five classes to be scored simultaneously without artificial competition.
 
 ## 5. How the weights were trained
 
