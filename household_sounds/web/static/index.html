@@ -25,18 +25,64 @@
         <span id="status-badge" class="badge">Ready</span>
       </div>
 
-      <div class="button-group">
-        <button id="start" type="button" class="btn btn-primary">Start Microphone</button>
-        <button id="stop" type="button" class="btn btn-secondary" disabled>Stop</button>
+      <!-- Source Selector -->
+      <div class="control-row" style="margin-bottom: 16px;">
+        <label class="control-label">Input Source</label>
+        <div class="segmented-control">
+          <label class="segment active">
+            <input type="radio" name="input-source" value="browser" id="source-browser" checked>
+            <span>🎙️ Browser Mic</span>
+          </label>
+          <label class="segment">
+            <input type="radio" name="input-source" value="thingy" id="source-thingy">
+            <span>📡 Thingy:53 Stream</span>
+          </label>
+        </div>
       </div>
 
-      <div class="meter-group">
+      <!-- Browser Microphone Controls -->
+      <div id="browser-controls">
+        <div class="button-group">
+          <button id="start" type="button" class="btn btn-primary">Start Microphone</button>
+          <button id="stop" type="button" class="btn btn-secondary" disabled>Stop</button>
+        </div>
+        <p class="note">Requires microphone permission. Audio is processed in real time and is never stored.</p>
+      </div>
+
+      <!-- Thingy BLE Stream Controls -->
+      <div id="thingy-controls" style="display: none;">
+        <div class="thingy-meta-grid">
+          <div class="thingy-meta-item">
+            <span class="meta-label">Selected Node</span>
+            <select id="thingy-node-select" class="form-select">
+              <option value="all">All Heard Nodes</option>
+              <option value="0">Node 0 (Central)</option>
+              <option value="1">Node 1</option>
+              <option value="2">Node 2</option>
+              <option value="3">Node 3</option>
+            </select>
+          </div>
+          <div class="thingy-meta-item">
+            <span class="meta-label">Stream Status</span>
+            <span id="thingy-link-badge" class="badge">Waiting for packets...</span>
+          </div>
+          <div class="thingy-meta-item">
+            <span class="meta-label">Packet Rate</span>
+            <span id="thingy-rate-val" class="meta-value">0.0 pkts/s</span>
+          </div>
+        </div>
+        <div class="button-group" style="margin-top: 10px;">
+          <button id="thingy-sim-btn" type="button" class="btn btn-secondary">Simulate Stream (Test)</button>
+        </div>
+        <p class="note">Listening directly to Nordic Thingy:53 hardware (companded ~4,031 Hz mono).</p>
+      </div>
+
+      <div class="meter-group" style="margin-top: 16px;">
         <label for="level-bar">Input Level</label>
         <div class="meter-track">
           <div id="level-bar" class="meter-fill"></div>
         </div>
       </div>
-      <p class="note">Requires microphone permission. Audio is processed in real time and is never stored.</p>
     </section>
 
     <!-- Runtime & Backend Tooling -->

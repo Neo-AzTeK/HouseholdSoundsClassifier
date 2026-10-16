@@ -55,24 +55,35 @@ The model scores 5 independent categories simultaneously:
 
 All commands are run from the project root using [`uv`](https://docs.astral.sh/uv/):
 
-### 1. Run the Web Microphone Demo
+### 1. Run the Web Interface (Browser Mic or Thingy:53 Stream)
 
 ```bash
-# Localhost only:
+# Localhost:
 uv run sound-web
 
 # Or accessible across your local Wi-Fi / network (with auto-generated SSL):
 uv run sound-web --network
 ```
 
-When started with `--network`, the server binds to `0.0.0.0`, automatically generates self-signed SSL certificates in `ssl/` (if missing), and outputs both local and network URLs:
-```text
-====================================================================
- Household Sound Classifier Web Server
-   Local URL:    https://localhost:8000
-   Network URL:  https://192.168.178.126:8000
-   Note: Accept the self-signed certificate on your mobile browser.
-====================================================================
+The web UI provides an **Input Source** selector:
+- **🎙️ Browser Mic**: Real-time microphone capture through your phone or laptop.
+- **📡 Thingy:53 Stream**: Live classification of audio streamed from Nordic Thingy:53 hardware.
+
+#### Linking with `thingy-ranging`
+
+Run `gateway.py` with the forwarder flag pointing to `sound-web`:
+```bash
+# In the thingy-ranging repository (run on port 8080 to avoid collision):
+uv run python tools/gateway.py --port 8080 --classifier-url ws://127.0.0.1:8000/ws/thingy
+```
+
+Or use the standalone bridge tool:
+```bash
+# Forward stdin chunks:
+your_stream_command | uv run sound-bridge stdin
+
+# Or replay a simulated stream for testing:
+uv run sound-bridge replay --sound tone --duration 10
 ```
 
 ### 2. Test Model Inference (CPU or Hailo NPU)

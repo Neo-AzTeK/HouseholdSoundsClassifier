@@ -242,8 +242,8 @@ class Predictor:
         return self.predict(window)["scores"]
 
 
-def decode_codes(codes: list[int]) -> np.ndarray:
-    values = np.asarray(codes, dtype=np.uint8)
+def decode_codes(codes: list[int] | bytes | np.ndarray) -> np.ndarray:
+    values = np.frombuffer(codes, dtype=np.uint8) if isinstance(codes, (bytes, bytearray)) else np.asarray(codes, dtype=np.uint8)
     magnitude = np.exp2((values & 127).astype(np.float32) / 8.0) - 1.0
     return (magnitude * np.where(values & 128, -1.0, 1.0) / 32768.0).astype(np.float32)
 

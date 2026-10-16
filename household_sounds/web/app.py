@@ -13,7 +13,12 @@ from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconn
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from household_sounds.predict import Predictor
-from household_sounds.web.streaming import AudioSession, classify_browser_window
+from household_sounds.web.streaming import (
+    AudioSession,
+    ThingySession,
+    classify_browser_window,
+    classify_thingy_window,
+)
 
 PACKAGE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = PACKAGE_DIR / "static"
@@ -21,6 +26,8 @@ REPO_ROOT = PACKAGE_DIR.parent.parent
 
 app = FastAPI(title="Household Sound Classifier Demo")
 predictor = Predictor()
+thingy_session = ThingySession()
+connected_audio_clients: set[WebSocket] = set()
 
 ASSET_TYPES = {
     "app.js": "text/javascript",
@@ -84,32 +91,50 @@ async def set_config(request: Request) -> dict[str, Any]:
     return predictor.get_backends_info()
 
 
+async def broadcast_prediction(prediction: dict[str, Any]) -> None:
+    """Broadcast a sound prediction event to all active UI web clients."""
+    dead: list[WebSocket] = []
+    for ws in list(connected_audio_clients):
+        try:
+            await ws.send_json(prediction)
+        except Exception:
+            dead.append(ws)
+    for ws in dead:
+        connected_audio_clients.discard(ws)
+
+
 @app.websocket("/ws/audio")
 async def audio_socket(websocket: WebSocket) -> None:
     await websocket.accept()
-    disconnected = False
+    connected_audio_clients.add(websocket)
+    session: AudioSession | None = None
+    rate = 48000
     try:
         start = await websocket.receive_json()
         if start.get("type") != "start":
             raise ValueError("first message must be a start request")
-        rate = int(start["sampleRate"])
-        session = AudioSession(rate)
+        source = start.get("source", "browser")
+        rate = int(start.get("sampleRate", 48000))
+        if source == "browser":
+            session = AudioSession(rate)
+
         await websocket.send_json({
             "type": "ready",
+            "source": source,
             "sampleRate": rate,
             "backends": predictor.get_backends_info(),
+            "thingy_nodes": thingy_session.get_nodes_status(),
         })
 
         while True:
             message = await websocket.receive()
             if message["type"] == "websocket.disconnect":
-                disconnected = True
                 break
 
-            if message.get("bytes") is not None:
+            if message.get("bytes") is not None and session is not None:
                 for window in session.push_bytes(message["bytes"]):
                     res = classify_browser_window(predictor, window, rate)
-                    await websocket.send_json(res)
+                    await broadcast_prediction(res)
 
             elif message.get("text") is not None:
                 cmd = json.loads(message["text"])
@@ -133,12 +158,118 @@ async def audio_socket(websocket: WebSocket) -> None:
                     })
 
     except (ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
-        await websocket.send_json({"type": "error", "message": str(exc)})
+        try:
+            await websocket.send_json({"type": "error", "message": str(exc)})
+        except Exception:
+            pass
     except WebSocketDisconnect:
-        disconnected = True
+        pass
     finally:
-        if not disconnected:
+        connected_audio_clients.discard(websocket)
+        try:
             await websocket.close()
+        except Exception:
+            pass
+
+
+@app.websocket("/ws/thingy")
+async def thingy_socket(websocket: WebSocket) -> None:
+    """Ingestion WebSocket for Thingy:53 stream packets (from gateway.py or sound-bridge)."""
+    await websocket.accept()
+    await websocket.send_json({"type": "ready", "service": "thingy-classifier-ingestion"})
+    try:
+        while True:
+            message = await websocket.receive()
+            if message["type"] == "websocket.disconnect":
+                break
+
+            windows: list[Any] = []
+            node_id = 0
+
+            if message.get("bytes") is not None:
+                data = message["bytes"]
+                try:
+                    node_id, windows = thingy_session.push_raw_packet(data)
+                except Exception as exc:
+                    await websocket.send_json({"type": "error", "message": str(exc)})
+                    continue
+
+            elif message.get("text") is not None:
+                try:
+                    parsed = json.loads(message["text"])
+                    if parsed.get("type") == "ping":
+                        await websocket.send_json({"type": "pong", "nodes": thingy_session.get_nodes_status()})
+                        continue
+                    node_id, windows = thingy_session.push_message(parsed)
+                except Exception as exc:
+                    await websocket.send_json({"type": "error", "message": str(exc)})
+                    continue
+
+            for window in windows:
+                res = classify_thingy_window(predictor, window, node_id)
+                await broadcast_prediction(res)
+
+    except WebSocketDisconnect:
+        pass
+    except Exception as exc:
+        try:
+            await websocket.send_json({"type": "error", "message": str(exc)})
+        except Exception:
+            pass
+    finally:
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+
+
+@app.get("/api/thingy/status")
+async def thingy_status() -> dict[str, Any]:
+    """Return status of all Thingy nodes observed by the classifier."""
+    return {"nodes": thingy_session.get_nodes_status()}
+
+
+@app.post("/api/thingy/mock")
+async def thingy_mock(request: Request) -> dict[str, Any]:
+    """Inject synthetic Thingy packets for offline testing and verification."""
+    import asyncio
+    import numpy as np
+
+    data: dict[str, Any] = {}
+    try:
+        data = await request.json()
+    except Exception:
+        pass
+
+    node_id = int(data.get("node_id", 0))
+    sound_type = str(data.get("sound", "tone"))  # "tone", "noise", "silence"
+    num_chunks = int(data.get("chunks", 25))  # 25 chunks = ~1.18 seconds
+
+    t0 = 0.0
+    dt = 1.0 / 4031.25
+    for _ in range(num_chunks):
+        if sound_type == "tone":
+            t = np.arange(190) * dt + t0
+            samples = (0.5 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+            t0 += 190 * dt
+        elif sound_type == "noise":
+            samples = np.random.uniform(-0.4, 0.4, 190).astype(np.float32)
+        else:
+            samples = np.zeros(190, dtype=np.float32)
+
+        windows = thingy_session.push_samples(node_id, samples)
+        for window in windows:
+            res = classify_thingy_window(predictor, window, node_id)
+            await broadcast_prediction(res)
+        await asyncio.sleep(0.01)
+
+    return {
+        "ok": True,
+        "node_id": node_id,
+        "sound": sound_type,
+        "chunks_injected": num_chunks,
+        "nodes": thingy_session.get_nodes_status(),
+    }
 
 
 def get_lan_ip() -> str:

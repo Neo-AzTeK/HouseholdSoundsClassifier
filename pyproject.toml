@@ -18,11 +18,13 @@ dependencies = [
     "websockets>=13.0",
     "onnx>=1.16.0",
     "onnxruntime>=1.18.0",
+    "bleak>=0.22.0",
 ]
 
 [project.scripts]
 sound-web = "household_sounds.web.app:main"
 sound-predict = "household_sounds.predict:main"
+sound-bridge = "household_sounds.thingy_bridge:main"
 sound-train = "household_sounds.train:main"
 sound-dataset = "household_sounds.dataset:main"
 sound-export = "household_sounds.hailo.export_onnx:main"
