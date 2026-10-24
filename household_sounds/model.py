@@ -1,4 +1,4 @@
-"""Audio preprocessing and compact five-output SoundCNN neural network."""
+"""Audio preprocessing and compact three-output SoundCNN neural network."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from scipy import signal
 import torch
 from torch import nn
 
-LABELS = ("voices", "machines", "collisions", "steps")
+LABELS = ("voices", "machines", "impacts")
 SOURCE_RATE = 16_125
 STREAM_RATE = SOURCE_RATE / 4
 WINDOW_SAMPLES = 4_031
@@ -102,7 +102,7 @@ def spectrogram(window: np.ndarray) -> np.ndarray:
 
 
 class SoundCNN(nn.Module):
-    """Input [batch, 1, 129, 48], output five independent logits."""
+    """Input [batch, 1, 129, 48], output three independent logits."""
 
     def __init__(self) -> None:
         super().__init__()

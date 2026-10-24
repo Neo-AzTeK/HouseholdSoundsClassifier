@@ -21,8 +21,7 @@ BASE = "https://huggingface.co/datasets/Fhrozen/FSD50k/resolve/main"
 TAGS = {
     "voices": {"Speech", "Conversation", "Whispering", "Yell", "Shout"},
     "machines": {"Mechanical_fan", "Microwave_oven", "Printer", "Power_tool", "Drill"},
-    "collisions": {"Slam", "Knock", "Shatter", "Coin_(dropping)", "Chink_and_clink"},
-    "steps": {"Walk_and_footsteps"},
+    "impacts": {"Slam", "Knock", "Shatter", "Coin_(dropping)", "Chink_and_clink", "Walk_and_footsteps"},
 }
 NEGATIVE_TAGS = {"Rain", "Wind", "Water", "Dog", "Bird", "Insect"}
 META_FILES = {

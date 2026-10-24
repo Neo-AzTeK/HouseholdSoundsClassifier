@@ -300,7 +300,7 @@ class Predictor:
                 if label == "machines":
                     self.smoothed_scores[label] = 0.5 * self.smoothed_scores[label] + 0.5 * raw
                     scores[label] = round(float(self.smoothed_scores[label]), 4)
-                elif label in ("collisions", "steps"):
+                elif label == "impacts":
                     if raw > self.thresholds.get(label, 0.5):
                         self.smoothed_scores[label] = raw
                     else:

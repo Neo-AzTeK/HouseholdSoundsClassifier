@@ -37,16 +37,13 @@ def build_fusion_manifest() -> Path:
         labels = {
             "voices": 0,
             "machines": 0,
-            "collisions": 0,
-            "steps": 0,
+            "impacts": 0,
         }
 
         # Clean category mappings from ESC-50
         is_used = True
-        if cat == "footsteps":
-            labels["steps"] = 1
-        elif cat in ("door_wood_knock", "glass_breaking", "can_opening", "door_wood_creaks"):
-            labels["collisions"] = 1
+        if cat in ("footsteps", "door_wood_knock", "glass_breaking", "can_opening", "door_wood_creaks"):
+            labels["impacts"] = 1
         elif cat in ("washing_machine", "vacuum_cleaner"):
             labels["machines"] = 1
         elif cat in ("crying_baby", "laughing", "coughing", "sneezing"):
@@ -97,18 +94,16 @@ def build_fusion_manifest() -> Path:
 
         is_voice = bool(src & {"Speech", "Conversation", "Whispering", "Yell", "Shout"})
         is_machine = bool(src & {"Mechanical_fan", "Microwave_oven", "Printer"})
-        is_collision = bool(src & {"Coin_(dropping)", "Chink_and_clink", "Shatter"})
-        is_step = bool(src & {"Walk_and_footsteps"}) and not (src & {"Door", "Slam", "Water", "Liquid"})
+        is_impact = bool(src & {"Coin_(dropping)", "Chink_and_clink", "Shatter", "Walk_and_footsteps"}) and not (src & {"Door", "Slam", "Water", "Liquid"})
         is_music = bool(src & instruments) and ("Music" in src or "Musical_instrument" in src)
 
-        # 4 target classes: voices, machines, collisions, steps
-        matches = [is_voice, is_machine, is_collision, is_step]
+        # 3 target classes: voices, machines, impacts
+        matches = [is_voice, is_machine, is_impact]
         if sum(matches) == 1 and not is_music:
             labels = {
                 "voices": int(is_voice),
                 "machines": int(is_machine),
-                "collisions": int(is_collision),
-                "steps": int(is_step),
+                "impacts": int(is_impact),
             }
             rows.append({
                 "id": f"fsd_{r['id']}",
@@ -122,12 +117,11 @@ def build_fusion_manifest() -> Path:
             })
             fsd_added += 1
         elif is_music and sum(matches) == 0:
-            # Music without voice/machine/collision/step -> negative ambient clutter
+            # Music without voice/machine/impact -> negative ambient clutter
             labels = {
                 "voices": 0,
                 "machines": 0,
-                "collisions": 0,
-                "steps": 0,
+                "impacts": 0,
             }
             rows.append({
                 "id": f"fsd_{r['id']}",

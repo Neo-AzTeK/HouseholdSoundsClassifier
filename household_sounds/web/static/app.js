@@ -1,11 +1,10 @@
-const labels = ['voices', 'machines', 'collisions', 'steps'];
+const labels = ['voices', 'machines', 'impacts'];
 
 // Model thresholds per label
 let thresholds = {
-  voices: 0.71,
-  machines: 0.60,
-  collisions: 0.57,
-  steps: 0.68,
+  voices: 0.55,
+  machines: 0.64,
+  impacts: 0.61,
 };
 
 // DOM Elements: Navigation Tabs
@@ -863,8 +862,7 @@ async function fetchDatasetSummary() {
     studioLabelCounts.innerHTML = `
       <span class="count-pill">Voices: <strong>${lc.voices || 0}</strong></span>
       <span class="count-pill">Machines: <strong>${lc.machines || 0}</strong></span>
-      <span class="count-pill">Collisions: <strong>${lc.collisions || 0}</strong></span>
-      <span class="count-pill">Steps: <strong>${lc.steps || 0}</strong></span>
+      <span class="count-pill">Impacts: <strong>${lc.impacts || 0}</strong></span>
     `;
 
     // Render segments list

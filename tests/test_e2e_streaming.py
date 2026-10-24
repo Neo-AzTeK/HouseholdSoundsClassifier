@@ -50,6 +50,6 @@ def test_thingy_to_webui_broadcast():
         assert prediction["source"] == "thingy"
         assert prediction["node_id"] == 0
         assert "scores" in prediction
-        assert set(prediction["scores"].keys()) == {"voices", "machines", "collisions", "steps"}
+        assert set(prediction["scores"].keys()) == {"voices", "machines", "impacts"}
         assert "latency_ms" in prediction
         assert prediction["latency_ms"] >= 0.0

@@ -162,17 +162,17 @@
             <div class="score-info">
               <span class="label-name">Voices</span>
               <div class="score-meta">
-                <span class="th-label">Cutoff: <strong class="th-val">71%</strong></span>
+                <span class="th-label">Cutoff: <strong class="th-val">55%</strong></span>
                 <span class="score-percent">0%</span>
               </div>
             </div>
             <div class="bar-track">
-              <div class="threshold-marker" style="left: 71%;"></div>
+              <div class="threshold-marker" style="left: 55%;"></div>
               <div class="bar-fill"></div>
             </div>
             <div class="th-slider-container">
               <span class="slider-hint">Sensitivity:</span>
-              <input type="range" class="th-slider" data-label="voices" min="10" max="95" value="71" step="1">
+              <input type="range" class="th-slider" data-label="voices" min="10" max="95" value="55" step="1">
             </div>
           </div>
 
@@ -181,55 +181,36 @@
             <div class="score-info">
               <span class="label-name">Machines</span>
               <div class="score-meta">
-                <span class="th-label">Cutoff: <strong class="th-val">60%</strong></span>
+                <span class="th-label">Cutoff: <strong class="th-val">64%</strong></span>
                 <span class="score-percent">0%</span>
               </div>
             </div>
             <div class="bar-track">
-              <div class="threshold-marker" style="left: 60%;"></div>
+              <div class="threshold-marker" style="left: 64%;"></div>
               <div class="bar-fill"></div>
             </div>
             <div class="th-slider-container">
               <span class="slider-hint">Sensitivity:</span>
-              <input type="range" class="th-slider" data-label="machines" min="10" max="95" value="60" step="1">
+              <input type="range" class="th-slider" data-label="machines" min="10" max="95" value="64" step="1">
             </div>
           </div>
 
-          <!-- Collisions -->
-          <div class="score-row" data-label="collisions">
+          <!-- Impacts & Steps -->
+          <div class="score-row" data-label="impacts">
             <div class="score-info">
-              <span class="label-name">Collisions</span>
+              <span class="label-name">💥 Impacts & Steps</span>
               <div class="score-meta">
-                <span class="th-label">Cutoff: <strong class="th-val">57%</strong></span>
+                <span class="th-label">Cutoff: <strong class="th-val">61%</strong></span>
                 <span class="score-percent">0%</span>
               </div>
             </div>
             <div class="bar-track">
-              <div class="threshold-marker" style="left: 57%;"></div>
+              <div class="threshold-marker" style="left: 61%;"></div>
               <div class="bar-fill"></div>
             </div>
             <div class="th-slider-container">
               <span class="slider-hint">Sensitivity:</span>
-              <input type="range" class="th-slider" data-label="collisions" min="10" max="95" value="57" step="1">
-            </div>
-          </div>
-
-          <!-- Steps -->
-          <div class="score-row" data-label="steps">
-            <div class="score-info">
-              <span class="label-name">Steps</span>
-              <div class="score-meta">
-                <span class="th-label">Cutoff: <strong class="th-val">68%</strong></span>
-                <span class="score-percent">0%</span>
-              </div>
-            </div>
-            <div class="bar-track">
-              <div class="threshold-marker" style="left: 68%;"></div>
-              <div class="bar-fill"></div>
-            </div>
-            <div class="th-slider-container">
-              <span class="slider-hint">Sensitivity:</span>
-              <input type="range" class="th-slider" data-label="steps" min="10" max="95" value="68" step="1">
+              <input type="range" class="th-slider" data-label="impacts" min="10" max="95" value="61" step="1">
             </div>
           </div>
         </div>
@@ -336,12 +317,8 @@
               <span>⚙️ Machines</span>
             </label>
             <label class="pill">
-              <input type="checkbox" name="studio-label" value="collisions">
-              <span>💥 Collisions</span>
-            </label>
-            <label class="pill">
-              <input type="checkbox" name="studio-label" value="steps">
-              <span>👟 Steps</span>
+              <input type="checkbox" name="studio-label" value="impacts">
+              <span>💥 Impacts & Steps</span>
             </label>
           </div>
         </div>
