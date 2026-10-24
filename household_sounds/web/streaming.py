@@ -78,9 +78,14 @@ class ThingySession:
             magic_hex = f"{data[5]:#x}" if len(data) > 5 else "none"
             raise ValueError(f"Invalid Thingy stream packet: len={len(data)}, magic={magic_hex}")
         node_id = int(data[4])
+        decim = int(data[6]) if len(data) > 6 else 4
         count = int(data[7])
         codes = data[20 : 20 + count]
         samples = decode_codes(codes)
+        if decim == 3:
+            # Resample roomsense stream (5376 Hz -> 4031.25 Hz, ratio 3/4) for classifier compatibility
+            from scipy import signal
+            samples = signal.resample_poly(samples, 3, 4).astype(np.float32)
         return node_id, self.push_samples(node_id, samples)
 
     def push_message(self, message: dict[str, Any]) -> tuple[int, list[np.ndarray]]:
@@ -126,6 +131,11 @@ def classify_browser_window(predictor: Predictor, window: np.ndarray, sample_rat
     stream = simulate_thingy_stream(window, sample_rate)
     result = predictor.predict(stream)
     result["source"] = "browser"
+    result["thresholds"] = dict(predictor.thresholds)
+    result["active_labels"] = [
+        label for label, score in result["scores"].items()
+        if score >= predictor.thresholds.get(label, 0.5)
+    ]
     for label, score in result["scores"].items():
         result[label] = score
     result["type"] = "prediction"
@@ -137,6 +147,11 @@ def classify_thingy_window(predictor: Predictor, window: np.ndarray, node_id: in
     result = predictor.predict(window)
     result["source"] = "thingy"
     result["node_id"] = node_id
+    result["thresholds"] = dict(predictor.thresholds)
+    result["active_labels"] = [
+        label for label, score in result["scores"].items()
+        if score >= predictor.thresholds.get(label, 0.5)
+    ]
     result["type"] = "prediction"
     for label, score in result["scores"].items():
         result[label] = score

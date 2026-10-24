@@ -71,3 +71,31 @@ def test_thingy_websocket_ingestion(client):
         head = struct.pack("<IBBBBQI", 1, 0, 0xB5, 4, 190, 0, 0)
         packet = head + bytes(190)
         ws.send_bytes(packet)
+
+
+def test_agc_configuration_and_prediction(client):
+    from household_sounds.predict import Predictor
+    from household_sounds.model import WINDOW_SAMPLES
+
+    predictor = Predictor()
+    assert predictor.use_agc is True
+
+    # Test faint signal (RMS ~0.005) gets amplified with AGC
+    faint_window = np.sin(np.linspace(0, 100, WINDOW_SAMPLES, dtype=np.float32)) * 0.007
+    pred_agc = predictor.predict(faint_window)
+    assert pred_agc["silence"] is False
+    assert pred_agc["gain"] > 1.0
+
+    # Test with AGC disabled
+    predictor.use_agc = False
+    pred_no_agc = predictor.predict(faint_window)
+    assert pred_no_agc["gain"] == 1.0
+
+    # Test POST /api/config
+    cfg_resp = client.post("/api/config", json={"use_agc": False})
+    assert cfg_resp.status_code == 200
+    assert cfg_resp.json()["use_agc"] is False
+
+    cfg_resp2 = client.post("/api/config", json={"use_agc": True})
+    assert cfg_resp2.status_code == 200
+    assert cfg_resp2.json()["use_agc"] is True

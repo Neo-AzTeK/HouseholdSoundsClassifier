@@ -12,6 +12,8 @@ data/audio/
 data/cache/
 data/metadata/
 data/inbox/
+data/esc50/
+data/custom_dataset/audio/
 
 # Local candidates & compiler scratch files
 artifacts/*.npy

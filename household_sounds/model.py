@@ -8,7 +8,7 @@ from scipy import signal
 import torch
 from torch import nn
 
-LABELS = ("voices", "machines", "collisions", "steps", "music")
+LABELS = ("voices", "machines", "collisions", "steps")
 SOURCE_RATE = 16_125
 STREAM_RATE = SOURCE_RATE / 4
 WINDOW_SAMPLES = 4_031
@@ -116,8 +116,14 @@ class SoundCNN(nn.Module):
                 nn.MaxPool2d(2),
             ))
             channels = width
-        self.features = nn.Sequential(*layers, nn.AdaptiveAvgPool2d(1), nn.Flatten())
-        self.head = nn.Linear(96, len(LABELS))
+        self.conv = nn.Sequential(*layers)
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.max_pool = nn.AdaptiveMaxPool2d(1)
+        self.head = nn.Linear(96 * 2, len(LABELS))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.head(self.features(x))
+        feat = self.conv(x)
+        avg_f = self.avg_pool(feat).flatten(1)
+        max_f = self.max_pool(feat).flatten(1)
+        pooled = torch.cat([avg_f, max_f], dim=1)
+        return self.head(pooled)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import asynccontextmanager
 import json
 import os
 import sys
@@ -10,9 +11,11 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 
-from household_sounds.predict import Predictor
+from household_sounds.dataset_studio import DatasetStudioManager
+from household_sounds.predict import Predictor, decode_codes
+from household_sounds.thingy_bridge import ThingyBleManager
 from household_sounds.web.streaming import (
     AudioSession,
     ThingySession,
@@ -24,10 +27,48 @@ PACKAGE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = PACKAGE_DIR / "static"
 REPO_ROOT = PACKAGE_DIR.parent.parent
 
-app = FastAPI(title="Household Sound Classifier Demo")
 predictor = Predictor()
 thingy_session = ThingySession()
+studio_manager = DatasetStudioManager()
 connected_audio_clients: set[WebSocket] = set()
+
+
+async def on_ble_packet(data: bytes) -> None:
+    """Callback for packets arriving over Bluetooth Low Energy directly from Thingy:53."""
+    try:
+        node_id, windows = thingy_session.push_raw_packet(data)
+        for window in windows:
+            res = classify_thingy_window(predictor, window, node_id)
+            await broadcast_prediction(res)
+        if studio_manager.is_recording and studio_manager.recording_source == "thingy":
+            decim = int(data[6]) if len(data) > 6 else 4
+            count = int(data[7])
+            codes = data[20 : 20 + count]
+            samples = decode_codes(codes)
+            if decim == 3:
+                from scipy import signal
+                samples = signal.resample_poly(samples, 3, 4).astype(np.float32)
+            studio_manager.push_audio(samples, source="thingy")
+    except Exception as exc:
+        pass
+
+
+ble_manager = ThingyBleManager(on_packet=on_ble_packet)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """FastAPI application lifecycle managing asynchronous background services."""
+    if os.environ.get("SOUND_WEB_AUTO_BLE") == "1":
+        print("[*] Lifespan startup: Auto-starting BLE connection to Thingy:53...")
+        ble_manager.start()
+    yield
+    if ble_manager.get_status().get("connected") or ble_manager._task:
+        print("[*] Lifespan shutdown: Cleaning up BLE connection...")
+        await ble_manager.stop()
+
+
+app = FastAPI(title="Household Sound Classifier Demo", lifespan=lifespan)
 
 ASSET_TYPES = {
     "app.js": "text/javascript",
@@ -88,6 +129,12 @@ async def set_config(request: Request) -> dict[str, Any]:
     data = await request.json()
     if "silence_gate" in data:
         predictor.use_silence_gate = bool(data["silence_gate"])
+    if "use_agc" in data:
+        predictor.use_agc = bool(data["use_agc"])
+    if "use_temporal_filter" in data:
+        predictor.use_temporal_filter = bool(data["use_temporal_filter"])
+    if "target_rms" in data:
+        predictor.target_rms = float(data["target_rms"])
     return predictor.get_backends_info()
 
 
@@ -133,6 +180,8 @@ async def audio_socket(websocket: WebSocket) -> None:
 
             if message.get("bytes") is not None and session is not None:
                 for window in session.push_bytes(message["bytes"]):
+                    if studio_manager.is_recording and studio_manager.recording_source == "browser":
+                        studio_manager.push_audio(window, source="browser")
                     res = classify_browser_window(predictor, window, rate)
                     await broadcast_prediction(res)
 
@@ -190,6 +239,11 @@ async def thingy_socket(websocket: WebSocket) -> None:
                 data = message["bytes"]
                 try:
                     node_id, windows = thingy_session.push_raw_packet(data)
+                    if studio_manager.is_recording and studio_manager.recording_source == "thingy":
+                        count = int(data[7])
+                        codes = data[20 : 20 + count]
+                        samples = decode_codes(codes)
+                        studio_manager.push_audio(samples, source="thingy")
                 except Exception as exc:
                     await websocket.send_json({"type": "error", "message": str(exc)})
                     continue
@@ -272,6 +326,178 @@ async def thingy_mock(request: Request) -> dict[str, Any]:
     }
 
 
+# ==============================================================================
+# Threshold & BLE Management APIs
+# ==============================================================================
+
+@app.get("/api/thresholds")
+async def get_thresholds() -> dict[str, Any]:
+    """Get active and default model thresholds."""
+    return {
+        "thresholds": predictor.thresholds,
+        "default_thresholds": predictor.default_thresholds,
+    }
+
+
+@app.post("/api/thresholds")
+async def set_thresholds(request: Request) -> dict[str, Any]:
+    """Update active thresholds, optionally saving to disk."""
+    data = await request.json()
+    new_th = data.get("thresholds", {})
+    persist = bool(data.get("persist", False))
+    updated = predictor.update_thresholds(new_th, persist=persist)
+    return {"ok": True, "thresholds": updated, "persisted": persist}
+
+
+@app.post("/api/thresholds/reset")
+async def reset_thresholds(request: Request) -> dict[str, Any]:
+    """Reset thresholds to default checkpoint values."""
+    data = {}
+    try:
+        data = await request.json()
+    except Exception:
+        pass
+    persist = bool(data.get("persist", False))
+    updated = predictor.reset_thresholds(persist=persist)
+    return {"ok": True, "thresholds": updated, "persisted": persist}
+
+
+@app.get("/api/ble/status")
+async def ble_status() -> dict[str, Any]:
+    """Return status of background BLE connection to Thingy:53."""
+    return ble_manager.get_status()
+
+
+@app.post("/api/ble/connect")
+async def ble_connect(request: Request) -> dict[str, Any]:
+    """Initiate background BLE connection to Thingy:53."""
+    data = {}
+    try:
+        data = await request.json()
+    except Exception:
+        pass
+    address = data.get("address")
+    ble_manager.start(address)
+    return {"ok": True, "status": ble_manager.get_status()}
+
+
+@app.post("/api/ble/disconnect")
+async def ble_disconnect() -> dict[str, Any]:
+    """Disconnect background BLE connection."""
+    await ble_manager.stop()
+    return {"ok": True, "status": ble_manager.get_status()}
+
+
+# ==============================================================================
+# Dataset Studio APIs (Recording, Interactive Annotation, and Training)
+# ==============================================================================
+
+@app.post("/api/studio/record/start")
+async def studio_record_start(request: Request) -> dict[str, Any]:
+    """Start an audio recording take from Thingy stream or browser microphone."""
+    data = {}
+    try:
+        data = await request.json()
+    except Exception:
+        pass
+    source = data.get("source", "thingy")
+    sample_rate = int(data.get("sample_rate", 4031 if source == "thingy" else 48000))
+    res = studio_manager.start_recording(source=source, sample_rate=sample_rate)
+    return res
+
+
+@app.post("/api/studio/record/stop")
+async def studio_record_stop() -> dict[str, Any]:
+    """Stop active recording take, resample to 16 kHz, save WAV, and return envelope."""
+    try:
+        res = studio_manager.stop_recording()
+        return res
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.get("/api/studio/recordings")
+async def studio_recordings() -> dict[str, Any]:
+    """List all audio takes in the dataset library."""
+    return {"recordings": studio_manager.list_recordings()}
+
+
+@app.get("/api/studio/recording/{filename}/waveform")
+async def studio_waveform(filename: str) -> dict[str, Any]:
+    """Get waveform envelope for an existing recording."""
+    try:
+        return studio_manager.get_recording_waveform(filename)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Recording not found")
+
+
+@app.get("/api/studio/audio/{filename}")
+async def studio_audio(filename: str) -> FileResponse:
+    """Stream WAV audio file for playback in the browser."""
+    path = studio_manager.audio_dir / filename
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Audio file not found")
+    return FileResponse(path, media_type="audio/wav")
+
+
+@app.post("/api/studio/annotate")
+async def studio_annotate(request: Request) -> dict[str, Any]:
+    """Annotate a time segment with multi-label tags and add to dataset manifest."""
+    data = await request.json()
+    recording_id = data.get("recording_id")
+    start_s = float(data.get("start_s", 0.0))
+    end_s = float(data.get("end_s", 1.0))
+    labels = data.get("labels", {})
+    split = data.get("split", "train")
+    if not recording_id:
+        raise HTTPException(status_code=400, detail="recording_id required")
+    try:
+        res = studio_manager.annotate_segment(recording_id, start_s, end_s, labels, split=split)
+        return res
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.get("/api/studio/dataset")
+async def studio_dataset() -> dict[str, Any]:
+    """Return summary and all annotated segments in the custom dataset."""
+    return studio_manager.get_dataset_summary()
+
+
+@app.delete("/api/studio/segment/{segment_id}")
+async def studio_delete_segment(segment_id: str) -> dict[str, Any]:
+    """Delete an annotated segment from the custom dataset."""
+    ok = studio_manager.delete_segment(segment_id)
+    return {"ok": ok, "segment_id": segment_id}
+
+
+@app.post("/api/studio/train")
+async def studio_train(request: Request) -> dict[str, Any]:
+    """Trigger background fine-tuning of the model with the combined dataset."""
+    data = {}
+    try:
+        data = await request.json()
+    except Exception:
+        pass
+    epochs = int(data.get("epochs", 10))
+
+    def on_train_finish() -> None:
+        predictor.reload_checkpoint()
+
+    asyncio.create_task(studio_manager.train_model(epochs=epochs, on_complete=on_train_finish))
+    return {
+        "ok": True,
+        "message": f"Training initiated for {epochs} epochs",
+        "status": studio_manager.training_status,
+    }
+
+
+@app.get("/api/studio/train/status")
+async def studio_train_status() -> dict[str, Any]:
+    """Check fine-tuning status and progress."""
+    return studio_manager.training_status
+
+
 def get_lan_ip() -> str:
     """Detect local LAN IP address."""
     import socket
@@ -319,7 +545,7 @@ def ensure_ssl_certificates(ssl_dir: Path, lan_ip: str) -> tuple[Path, Path]:
     return cert_path, key_path
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     """CLI launcher for the web demonstration."""
     import uvicorn
 
@@ -338,8 +564,18 @@ def main() -> None:
     )
     parser.add_argument("--ssl-certfile", default=None, help="Path to custom SSL certificate")
     parser.add_argument("--ssl-keyfile", default=None, help="Path to custom SSL private key")
+    parser.add_argument(
+        "--ble",
+        action="store_true",
+        help="Automatically connect to Thingy:53 over BLE on server startup",
+    )
     parser.add_argument("--reload", action="store_true", help="Enable automatic code reloading")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+
+    if args.ble:
+        os.environ["SOUND_WEB_AUTO_BLE"] = "1"
+    else:
+        os.environ.pop("SOUND_WEB_AUTO_BLE", None)
 
     lan_ip = get_lan_ip()
     ssl_dir = REPO_ROOT / "ssl"

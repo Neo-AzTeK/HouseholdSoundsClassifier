@@ -46,7 +46,7 @@ class CpuBackend:
 
         self.model = SoundCNN().eval()
         self.model.load_state_dict(checkpoint["state_dict"])
-        self.thresholds = dict(zip(LABELS, checkpoint["thresholds"]))
+        self.thresholds = {l: round(float(th), 4) for l, th in zip(LABELS, checkpoint["thresholds"])}
         self.silence_rms = float(checkpoint.get("silence_rms", SILENCE_RMS))
         self.name = "CPU (PyTorch)"
 
@@ -143,9 +143,15 @@ class Predictor:
         self.hef_path = Path(hef_path)
         self.cpu = CpuBackend(self.checkpoint_path)
         self.npu = NpuBackend(self.hef_path)
-        self.thresholds = dict(self.cpu.thresholds)
+        self.thresholds = {l: round(float(th), 4) for l, th in zip(LABELS, self.cpu.thresholds.values())}
+        self.default_thresholds = dict(self.thresholds)
         self.silence_rms = self.cpu.silence_rms
         self.use_silence_gate = True
+        self.use_agc = True
+        self.target_rms = 0.04
+        self.max_agc_gain = 8.0
+        self.use_temporal_filter = False
+        self.smoothed_scores = {label: 0.0 for label in LABELS}
 
         self.active_backend_id = "cpu"
         if backend.lower() == "npu":
@@ -153,6 +159,56 @@ class Predictor:
                 self.active_backend_id = "npu"
             else:
                 print(f"[!] Warning: NPU requested but not ready ({self.npu.error_message}). Using CPU.")
+
+    def update_thresholds(self, new_thresholds: dict[str, float], persist: bool = False) -> dict[str, float]:
+        """Update active decision thresholds and optionally write them to disk."""
+        for label, val in new_thresholds.items():
+            if label in self.thresholds:
+                self.thresholds[label] = round(float(np.clip(val, 0.01, 0.99)), 4)
+        if persist:
+            self._save_thresholds_to_disk()
+        return dict(self.thresholds)
+
+    def reset_thresholds(self, persist: bool = False) -> dict[str, float]:
+        """Reset decision thresholds to original checkpoint defaults."""
+        self.thresholds = dict(self.default_thresholds)
+        if persist:
+            self._save_thresholds_to_disk()
+        return dict(self.thresholds)
+
+    def _save_thresholds_to_disk(self) -> None:
+        """Persist thresholds into the PyTorch checkpoint and metrics.json."""
+        if self.checkpoint_path.is_file():
+            ckpt = torch.load(self.checkpoint_path, map_location="cpu", weights_only=False)
+            ckpt["thresholds"] = [float(self.thresholds[l]) for l in LABELS]
+            torch.save(ckpt, self.checkpoint_path)
+
+        metrics_path = self.checkpoint_path.with_suffix(".metrics.json")
+        if metrics_path.is_file():
+            try:
+                data = json.loads(metrics_path.read_text(encoding="utf-8"))
+                for split in ("validation", "test"):
+                    if split in data and isinstance(data[split], dict):
+                        for label in LABELS:
+                            if label in data[split] and isinstance(data[split][label], dict):
+                                data[split][label]["threshold"] = self.thresholds[label]
+                metrics_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            except Exception as exc:
+                print(f"[!] Warning: Failed to update metrics.json: {exc}", file=sys.stderr)
+
+    def reload_checkpoint(self, checkpoint_path: Path | None = None) -> bool:
+        """Reload the checkpoint weights and thresholds without restarting the server."""
+        if checkpoint_path is not None:
+            self.checkpoint_path = Path(checkpoint_path)
+        try:
+            self.cpu = CpuBackend(self.checkpoint_path)
+            self.thresholds = dict(self.cpu.thresholds)
+            self.default_thresholds = dict(self.cpu.thresholds)
+            self.silence_rms = self.cpu.silence_rms
+            return True
+        except Exception as exc:
+            print(f"[!] Error reloading checkpoint: {exc}", file=sys.stderr)
+            return False
 
     def set_backend(self, target: str) -> tuple[bool, str]:
         """Switch active backend to 'cpu' or 'npu'. Returns (success, message)."""
@@ -177,6 +233,9 @@ class Predictor:
             "active": self.active_backend_id,
             "silence_rms": self.silence_rms,
             "silence_gate": self.use_silence_gate,
+            "use_agc": self.use_agc,
+            "use_temporal_filter": self.use_temporal_filter,
+            "target_rms": self.target_rms,
             "thresholds": self.thresholds,
             "cpu": {
                 "id": "cpu",
@@ -207,7 +266,14 @@ class Predictor:
                 "latency_ms": 0.0,
                 "rms": round(rms, 6),
                 "silence": True,
+                "gain": 1.0,
             }
+
+        # Automatic Gain Control (AGC) for low-amplitude acoustic microphone input
+        gain_applied = 1.0
+        if self.use_agc:
+            gain_applied = min(max(self.target_rms / max(rms, 1e-5), 0.5), self.max_agc_gain)
+            window = np.clip(window * gain_applied, -1.0, 1.0).astype(np.float32)
 
         features = spectrogram(window)
 
@@ -228,6 +294,22 @@ class Predictor:
         latency_ms = (time.perf_counter() - t0) * 1000.0
 
         scores = {label: round(float(prob), 4) for label, prob in zip(LABELS, probs)}
+        if self.use_temporal_filter:
+            for label in LABELS:
+                raw = scores[label]
+                if label == "machines":
+                    self.smoothed_scores[label] = 0.5 * self.smoothed_scores[label] + 0.5 * raw
+                    scores[label] = round(float(self.smoothed_scores[label]), 4)
+                elif label in ("collisions", "steps"):
+                    if raw > self.thresholds.get(label, 0.5):
+                        self.smoothed_scores[label] = raw
+                    else:
+                        self.smoothed_scores[label] = 0.3 * self.smoothed_scores[label] + 0.7 * raw
+                    scores[label] = round(float(self.smoothed_scores[label]), 4)
+                elif label == "voices":
+                    self.smoothed_scores[label] = 0.35 * self.smoothed_scores[label] + 0.65 * raw
+                    scores[label] = round(float(self.smoothed_scores[label]), 4)
+
         return {
             "scores": scores,
             "backend": backend_used,
@@ -235,6 +317,7 @@ class Predictor:
             "latency_ms": round(latency_ms, 2),
             "rms": round(rms, 6),
             "silence": False,
+            "gain": round(gain_applied, 2),
         }
 
     def scores(self, window: np.ndarray) -> dict[str, float]:
@@ -295,7 +378,7 @@ def live_mode(predictor: Predictor, node_id: int | None) -> None:
             audio = audio[HOP_SAMPLES:]
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Household sound classifier inference CLI")
     parser.add_argument("--checkpoint", type=Path, default=DEFAULT_CHECKPOINT)
     parser.add_argument("--hef", type=Path, default=DEFAULT_HEF)
@@ -307,7 +390,7 @@ def main() -> None:
     file_parser.add_argument("--summary", action="store_true", help="One maximum score per label for the whole file")
     live_parser = sub.add_parser("live", help="Read decoded Thingy chunks as NDJSON from stdin")
     live_parser.add_argument("--node-id", type=int, default=None)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     predictor = Predictor(checkpoint_path=args.checkpoint, hef_path=args.hef, backend=args.backend)
     if args.mode == "file":

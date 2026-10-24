@@ -69,6 +69,24 @@ def test_thingy_session_raw_packet():
     assert status[2]["packets"] == 1
 
 
+def test_thingy_session_roomsense_packet_resampling():
+    session = ThingySession()
+    # decim=3 (roomsense 5376 Hz)
+    head = struct.pack("<IBBBBQI", 1, 0, 0xB5, 3, 190, 0, 0)
+    payload = bytes(190)
+    packet = head + payload
+    assert len(packet) == 210
+
+    node_id, windows = session.push_raw_packet(packet)
+    assert node_id == 0
+    # Resampled 190 samples at ratio 3/4 should give 143 samples in buffer
+    assert session.buffers[0].size == 143
+    status = session.get_nodes_status()
+    assert 0 in status
+    assert status[0]["packets"] == 1
+    assert status[0]["buffer_samples"] == 143
+
+
 def test_classify_thingy_window():
     predictor = Predictor()
     window = np.zeros(WINDOW_SAMPLES, dtype=np.float32)

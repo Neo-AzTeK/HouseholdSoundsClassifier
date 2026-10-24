@@ -9,14 +9,17 @@ import random
 from pathlib import Path
 
 import numpy as np
+from scipy import signal
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
+from household_sounds.loss import AsymmetricLoss
 from household_sounds.model import (
     LABELS,
     PREPROCESSING,
     SILENCE_RMS,
+    STREAM_RATE,
     WINDOW_SAMPLES,
     SoundCNN,
     candidate_starts,
@@ -27,6 +30,29 @@ from household_sounds.model import (
 )
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def apply_spec_augment(
+    spec: torch.Tensor,
+    max_freq_mask: int = 16,
+    max_time_mask: int = 8,
+    freq_masks: int = 2,
+    time_masks: int = 2,
+) -> torch.Tensor:
+    """SpecAugment: Randomly masks frequency and time bands.
+    spec shape: [channels, freq_bins, time_frames] e.g. [1, 129, 48].
+    """
+    spec = spec.clone()
+    _, f_bins, t_frames = spec.shape
+    for _ in range(freq_masks):
+        f = random.randint(1, max_freq_mask)
+        f0 = random.randint(0, max(0, f_bins - f))
+        spec[:, f0:f0 + f, :] = 0.0
+    for _ in range(time_masks):
+        t = random.randint(1, max_time_mask)
+        t0 = random.randint(0, max(0, t_frames - t))
+        spec[:, :, t0:t0 + t] = 0.0
+    return spec
 
 
 class Clips(Dataset):
@@ -47,9 +73,20 @@ class Clips(Dataset):
         }
         self.cache = ROOT / "data" / "cache"
         self.cache.mkdir(parents=True, exist_ok=True)
+        if self.train:
+            # Oversample machines slightly to balance with voices
+            expanded: list[int] = []
+            for i, r in enumerate(rows):
+                expanded.append(i)
+                if r["labels"].get("machines", 0):
+                    # Add 1 additional copy of machine clips
+                    expanded.append(i)
+            self.sample_indices = expanded
+        else:
+            self.sample_indices = list(range(len(rows)))
 
     def __len__(self) -> int:
-        return len(self.rows)
+        return len(self.sample_indices)
 
     def window(self, index: int) -> np.ndarray:
         row = self.rows[index]
@@ -65,17 +102,21 @@ class Clips(Dataset):
         return fixed_window(audio, start)
 
     def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
-        row = self.rows[index]
+        row_idx = self.sample_indices[index]
+        row = self.rows[row_idx]
         if self.train and random.random() < self.silence_probability:
-            window = (
-                np.random.normal(0, 2e-4, WINDOW_SAMPLES).astype(np.float32)
-                if random.random() < 0.5
-                else np.zeros(WINDOW_SAMPLES, dtype=np.float32)
-            )
+            # Realistic physical room background noise: pinkish noise + 50Hz/100Hz room hum
+            # with random amplitude from 1e-4 to 2e-3 (typical room floor)
+            t = np.arange(WINDOW_SAMPLES) / STREAM_RATE
+            hum = 0.5 * np.sin(2 * np.pi * 50.0 * t) + 0.3 * np.sin(2 * np.pi * 100.0 * t)
+            white = np.random.normal(0, 1.0, WINDOW_SAMPLES)
+            pink = signal.lfilter([0.15], [1.0, -0.85], white)
+            rms = random.uniform(1e-4, 2e-3)
+            window = (rms * (0.3 * hum + 0.7 * pink)).astype(np.float32)
             target = np.zeros(len(LABELS), dtype=np.float32)
             return torch.from_numpy(spectrogram(window)), torch.from_numpy(target)
 
-        window = self.window(index)
+        window = self.window(row_idx)
         labels = dict(row["labels"])
         if self.train and random.random() < self.mix_probability:
             other_labels = [label for label in LABELS if not labels[label] and self.indices_by_label[label]]
@@ -87,8 +128,29 @@ class Clips(Dataset):
                 for label, value in self.rows[other_index]["labels"].items():
                     if value:
                         labels[label] = 1
+
+        if self.train:
+            # Gain augmentation: randomly scale between 0.15x and 2.5x (-16 dB to +8 dB)
+            # Teaches network to identify sounds regardless of distance or microphone gain
+            gain = random.uniform(0.15, 2.5)
+            window = window * gain
+
+            # Ambient room noise injection (30% chance): faint room hum + pink noise
+            # Prevents model from mistaking low-frequency room modes for machines
+            if random.random() < 0.3:
+                t = np.arange(WINDOW_SAMPLES) / STREAM_RATE
+                hum = 0.5 * np.sin(2 * np.pi * 50.0 * t) + 0.3 * np.sin(2 * np.pi * 100.0 * t)
+                noise = signal.lfilter([0.15], [1.0, -0.85], np.random.normal(0, 1.0, WINDOW_SAMPLES))
+                noise_rms = random.uniform(2e-4, 1.5e-3)
+                window = window + (noise_rms * (0.3 * hum + 0.7 * noise)).astype(np.float32)
+
+            window = np.clip(window, -1.0, 1.0).astype(np.float32)
+
+        spec = torch.from_numpy(spectrogram(window))
+        if self.train and random.random() < 0.5:
+            spec = apply_spec_augment(spec)
         target = np.array([labels[label] for label in LABELS], dtype=np.float32)
-        return torch.from_numpy(spectrogram(window)), torch.from_numpy(target)
+        return spec, torch.from_numpy(target)
 
 
 @torch.no_grad()
@@ -145,9 +207,14 @@ def metrics(probabilities: np.ndarray, truth: np.ndarray, thresholds: np.ndarray
     return out
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--manifest", type=Path, default=ROOT / "data" / "manifest.jsonl")
+    default_manifest = (
+        ROOT / "data" / "manifest_combined.jsonl"
+        if (ROOT / "data" / "manifest_combined.jsonl").is_file()
+        else ROOT / "data" / "manifest.jsonl"
+    )
+    parser.add_argument("--manifest", type=Path, default=default_manifest)
     parser.add_argument("--epochs", type=int, default=25)
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--learning-rate", type=float, default=1e-3)
@@ -161,11 +228,29 @@ def main() -> None:
     parser.add_argument(
         "--silence-probability",
         type=float,
-        default=0.0,
+        default=0.15,
         help="Chance of replacing a training window with silence or faint noise",
     )
+    parser.add_argument(
+        "--loss",
+        choices=["asl", "bce"],
+        default="asl",
+        help="Loss function: 'asl' (Asymmetric Loss) or 'bce' (Binary Cross Entropy)",
+    )
+    parser.add_argument(
+        "--asl-gamma-neg",
+        type=float,
+        default=2.5,
+        help="ASL gamma_neg focusing parameter",
+    )
+    parser.add_argument(
+        "--asl-clip",
+        type=float,
+        default=0.05,
+        help="ASL margin clip for negative probabilities",
+    )
     parser.add_argument("--output", type=Path, default=ROOT / "artifacts" / "household_sound.pt")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if not 0.0 <= args.mix_probability <= 1.0:
         parser.error("--mix-probability must be between 0 and 1")
@@ -203,16 +288,22 @@ def main() -> None:
         for split in ("val", "test")
     }
     train_loader = DataLoader(train_data, batch_size=args.batch_size, shuffle=True)
-    counts = np.array([sum(r["labels"][label] for r in groups["train"]) for label in LABELS])
-    negatives = len(groups["train"]) - counts
-    pos_weight = torch.tensor(
-        np.clip(negatives / np.maximum(counts, 1), 1, 15),
-        dtype=torch.float32,
-        device=device,
-    )
-    loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+    if args.loss == "asl":
+        loss_fn = AsymmetricLoss(gamma_neg=args.asl_gamma_neg, gamma_pos=1.0, clip=args.asl_clip)
+        print(f"Using AsymmetricLoss (gamma_neg={args.asl_gamma_neg}, clip={args.asl_clip})", flush=True)
+    else:
+        counts = np.array([sum(r["labels"][label] for r in groups["train"]) for label in LABELS])
+        negatives = len(groups["train"]) - counts
+        pos_weight = torch.tensor(
+            np.clip(negatives / np.maximum(counts, 1), 1, 15),
+            dtype=torch.float32,
+            device=device,
+        )
+        loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+        print("Using BCEWithLogitsLoss with pos_weight", flush=True)
     model = SoundCNN().to(device)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=1e-4)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=5e-5)
     best_score, stale = -1.0, 0
     args.output.parent.mkdir(parents=True, exist_ok=True)
 
@@ -226,6 +317,7 @@ def main() -> None:
             loss.backward()
             optimizer.step()
             losses.append(float(loss.item()))
+        scheduler.step()
         probs, truth = predict_loader(model, loaders["val"], device)
         thresholds = best_thresholds(probs, truth)
         report = metrics(probs, truth, thresholds)
@@ -244,10 +336,11 @@ def main() -> None:
                 "mix_probability": args.mix_probability,
                 "silence_probability": args.silence_probability,
                 "silence_rms": SILENCE_RMS,
+                "loss": args.loss,
             }, args.output)
         else:
             stale += 1
-            if stale >= 6:
+            if stale >= 10:
                 print("Early stopping", flush=True)
                 break
 

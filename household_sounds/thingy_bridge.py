@@ -10,12 +10,186 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from collections import deque
+import inspect
 import json
 import sys
 import time
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
+
+
+class ThingyBleManager:
+    """Manages direct Bluetooth Low Energy connectivity to a Thingy:53 central device."""
+
+    SERVICE_UUID = "a88278e0-7009-4bee-a6f8-e1dc3ff02b92"
+    RESULT_UUID = "a88278e1-7009-4bee-a6f8-e1dc3ff02b92"
+    CONTROL_UUID = "a88278e2-7009-4bee-a6f8-e1dc3ff02b92"
+
+    def __init__(self, on_packet: Callable[[bytes], Any] | None = None) -> None:
+        self.on_packet = on_packet
+        self.state: str = "disconnected"  # disconnected, scanning, connecting, connected, error
+        self.address: str | None = None
+        self.name: str | None = None
+        self.rssi: int | None = None
+        self.error: str | None = None
+        self.packet_count: int = 0
+        self.last_packet_time: float | None = None
+        self._task: asyncio.Task[None] | None = None
+        self._client: Any = None
+        self._stop_requested: bool = False
+        self._packet_timestamps: deque[float] = deque(maxlen=100)
+
+    def get_status(self) -> dict[str, Any]:
+        """Return real-time BLE connection diagnostics."""
+        now = time.monotonic()
+        while self._packet_timestamps and now - self._packet_timestamps[0] > 2.0:
+            self._packet_timestamps.popleft()
+        rate = len(self._packet_timestamps) / 2.0 if self._packet_timestamps else 0.0
+        return {
+            "state": self.state,
+            "address": self.address,
+            "name": self.name,
+            "rssi": self.rssi,
+            "error": self.error,
+            "packet_count": self.packet_count,
+            "packet_rate": round(rate, 1),
+            "connected": self.state == "connected",
+        }
+
+    def start(self, address: str | None = None) -> None:
+        """Start background BLE scanning and streaming task."""
+        if self._task and not self._task.done():
+            return
+        self._stop_requested = False
+        try:
+            loop = asyncio.get_running_loop()
+            self._task = loop.create_task(self._run_loop(address))
+        except RuntimeError:
+            self.error = "No running asyncio event loop"
+            print("[!] Warning: Cannot start BLE manager outside an active asyncio event loop", file=sys.stderr)
+
+    async def stop(self) -> None:
+        """Stop BLE streaming and disconnect device."""
+        self._stop_requested = True
+        self.state = "disconnected"
+        if self._client is not None:
+            try:
+                if self._client.is_connected:
+                    try:
+                        await self._client.write_gatt_char(self.CONTROL_UUID, b"stream 0\n")
+                    except Exception:
+                        pass
+                    try:
+                        await self._client.stop_notify(self.RESULT_UUID)
+                    except Exception:
+                        pass
+                    await self._client.disconnect()
+            except Exception:
+                pass
+            finally:
+                self._client = None
+
+        if self._task and not self._task.done():
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+            self._task = None
+
+    async def _run_loop(self, target_address: str | None) -> None:
+        from bleak import BleakClient, BleakScanner
+
+        while not self._stop_requested:
+            try:
+                addr = target_address
+                if not addr:
+                    self.state = "scanning"
+                    self.error = None
+
+                    def _device_filter(d: Any, adv: Any) -> bool:
+                        name = (d.name or getattr(adv, "local_name", None) or "").lower()
+                        uuids = [u.lower() for u in getattr(adv, "service_uuids", [])]
+                        return (
+                            "thingy ranging" in name
+                            or "conn time sync" in name
+                            or "thingy" in name
+                            or self.SERVICE_UUID.lower() in uuids
+                            or "a88278d0-7009-4bee-a6f8-e1dc3ff02b92" in uuids
+                        )
+
+                    device = await BleakScanner.find_device_by_filter(
+                        _device_filter,
+                        timeout=8.0,
+                    )
+                    if not device:
+                        self.error = "No Thingy:53 found advertising nearby"
+                        self.state = "disconnected"
+                        await asyncio.sleep(3.0)
+                        continue
+                    addr = device.address
+                    self.name = device.name or "Thingy:53"
+                    self.rssi = getattr(device, "rssi", None)
+
+                self.state = "connecting"
+                self.address = addr
+                async with BleakClient(addr, timeout=20.0) as client:
+                    self._client = client
+                    service_uuids = [s.uuid.lower() for s in client.services]
+
+                    if self.SERVICE_UUID.lower() not in service_uuids:
+                        dev_name = self.name or "Thingy:53"
+                        self.error = (
+                            f"Detected '{dev_name}' (Milestone 1 firmware). "
+                            "This firmware only tests clock sync and has no microphone driver. "
+                            "Flash 'thingy_ranging' (Milestone 2) to enable live audio streaming."
+                        )
+                        self.state = "firmware_mismatch"
+                        print(f"[!] {self.error}", file=sys.stderr)
+                        await asyncio.sleep(6.0)
+                        continue
+
+                    self.state = "connected"
+                    self.error = None
+
+                    def _on_notify(_handle: int, data: bytearray) -> None:
+                        if len(data) == 210 and data[5] == 0xB5:
+                            now = time.monotonic()
+                            self.packet_count += 1
+                            self.last_packet_time = now
+                            self._packet_timestamps.append(now)
+                            if self.on_packet is not None:
+                                raw = bytes(data)
+                                if inspect.iscoroutinefunction(self.on_packet):
+                                    asyncio.create_task(self.on_packet(raw))
+                                else:
+                                    try:
+                                        self.on_packet(raw)
+                                    except Exception as exc:
+                                        print(f"[!] BLE callback error: {exc}", file=sys.stderr)
+
+                    await client.start_notify(self.RESULT_UUID, _on_notify)
+                    # roomsense uses stream 3 (5376 Hz); older prototype used stream 4 (4031 Hz)
+                    try:
+                        await client.write_gatt_char(self.CONTROL_UUID, b"stream 3\n")
+                    except Exception:
+                        await client.write_gatt_char(self.CONTROL_UUID, b"stream 4\n")
+
+                    while client.is_connected and not self._stop_requested:
+                        await asyncio.sleep(0.5)
+
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                self.error = str(exc)
+                self.state = "error"
+                if not self._stop_requested:
+                    await asyncio.sleep(3.0)
+
+        self.state = "disconnected"
+        self._client = None
 
 
 async def forward_stdin(ws_url: str) -> None:
@@ -125,8 +299,11 @@ async def ble_stream(ws_url: str, address: str | None = None) -> None:
                     asyncio.create_task(ws.send(bytes(data)))
 
             await client.start_notify(RESULT_UUID, on_notify)
-            # Enable audio streaming: decim 4
-            await client.write_gatt_char(CONTROL_UUID, b"stream 4\n")
+            # Enable audio streaming: decim 3 (roomsense 5376 Hz) or 4 (legacy 4031 Hz)
+            try:
+                await client.write_gatt_char(CONTROL_UUID, b"stream 3\n")
+            except Exception:
+                await client.write_gatt_char(CONTROL_UUID, b"stream 4\n")
             print("[+] Streaming audio to sound-web (Ctrl+C to stop)...")
 
             try:
@@ -137,7 +314,7 @@ async def ble_stream(ws_url: str, address: str | None = None) -> None:
                 await client.stop_notify(RESULT_UUID)
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Thingy:53 Audio Classifier Bridge")
     parser.add_argument(
         "--ws-url",
@@ -160,7 +337,7 @@ def main() -> None:
     ble_parser = sub.add_parser("ble", help="Direct BLE connection to Thingy:53")
     ble_parser.add_argument("--address", help="BLE MAC address (optional)")
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if args.mode == "replay":
         asyncio.run(replay_stream(args.ws_url, args.node_id, args.sound, args.duration))

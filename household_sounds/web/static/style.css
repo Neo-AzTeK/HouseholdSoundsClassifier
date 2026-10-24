@@ -380,3 +380,345 @@ footer {
   font-size: 0.75rem;
   color: var(--text-muted);
 }
+
+/* ========================================================================== */
+/* Navigation Tabs                                                            */
+/* ========================================================================== */
+.header-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.nav-tabs {
+  display: flex;
+  gap: 8px;
+}
+
+.nav-tab {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.nav-tab:hover {
+  color: var(--text);
+  border-color: #475569;
+}
+
+.nav-tab.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+  font-weight: 600;
+}
+
+.tab-panel {
+  display: block;
+}
+
+/* ========================================================================== */
+/* Direct BLE Connect Box                                                     */
+/* ========================================================================== */
+.ble-connect-box {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #090d16;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px 14px;
+  gap: 12px;
+}
+
+.ble-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.meta-sub {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+  font-family: ui-monospace, monospace;
+}
+
+/* ========================================================================== */
+/* Per-Class Threshold Sliders & Markers                                     */
+/* ========================================================================== */
+.score-meta {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.th-label {
+  font-size: 0.75rem;
+  color: #f59e0b;
+}
+
+.bar-track {
+  position: relative;
+}
+
+.threshold-marker {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  background: #f59e0b;
+  z-index: 3;
+  box-shadow: 0 0 4px #f59e0b;
+}
+
+.th-slider-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.slider-hint {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  width: 65px;
+  flex-shrink: 0;
+}
+
+.th-slider {
+  flex-grow: 1;
+  accent-color: #f59e0b;
+  cursor: pointer;
+  height: 4px;
+}
+
+/* ========================================================================== */
+/* Dataset Studio: Recording & Waveform Canvas                                */
+/* ========================================================================== */
+.recording-timer {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #ef4444;
+  font-family: ui-monospace, monospace;
+  align-self: center;
+}
+
+.btn-danger {
+  background: #dc2626;
+  color: #fff;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.btn-danger:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.waveform-container {
+  background: #090d16;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  position: relative;
+  user-select: none;
+}
+
+#waveform-canvas {
+  display: block;
+  width: 100%;
+  height: 130px;
+  cursor: crosshair;
+}
+
+.waveform-time-axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-family: ui-monospace, monospace;
+  margin-top: 4px;
+}
+
+.timing-controls-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+.timing-input-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.form-input {
+  background: #090d16;
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-family: ui-monospace, monospace;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+/* Checkbox Pills */
+.checkbox-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: #090d16;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.pill:has(input:checked) {
+  border-color: var(--primary);
+  background: #1e3a8a;
+  color: #fff;
+}
+
+.pill input[type="checkbox"] {
+  accent-color: var(--primary);
+}
+
+/* Dataset Summary & Segments */
+.dataset-counts-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.count-pill {
+  background: #090d16;
+  border: 1px solid var(--border);
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.count-pill strong {
+  color: var(--text);
+}
+
+.segments-list-wrap {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #090d16;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.segments-list {
+  padding: 6px;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 24px 16px;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.segment-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 10px;
+  border-bottom: 1px solid #1e293b;
+  font-size: 0.82rem;
+}
+
+.segment-row:last-child {
+  border-bottom: none;
+}
+
+.segment-tags {
+  display: flex;
+  gap: 4px;
+}
+
+.tag-badge {
+  background: #1e3a8a;
+  color: #93c5fd;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 0.72rem;
+}
+
+.btn-icon {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 4px;
+  font-size: 0.9rem;
+}
+
+.btn-icon:hover {
+  color: #ef4444;
+}
+
+/* Training Box */
+.training-box {
+  background: #0d1527;
+  border: 1px solid #1e3a8a;
+  border-radius: 6px;
+  padding: 14px;
+}
+
+.training-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.training-header h3 {
+  font-size: 0.95rem;
+  color: #93c5fd;
+}
+
+.progress-bar-track {
+  width: 100%;
+  height: 8px;
+  background: #1e293b;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: #2563eb;
+  transition: width 0.3s ease;
+}

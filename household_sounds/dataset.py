@@ -19,11 +19,10 @@ MANIFEST = ROOT / "data" / "manifest.jsonl"
 BASE = "https://huggingface.co/datasets/Fhrozen/FSD50k/resolve/main"
 
 TAGS = {
-    "voices": {"Speech", "Conversation", "Whispering", "Yell", "Shout", "Singing"},
+    "voices": {"Speech", "Conversation", "Whispering", "Yell", "Shout"},
     "machines": {"Mechanical_fan", "Microwave_oven", "Printer", "Power_tool", "Drill"},
-    "collisions": {"Slam", "Knock", "Thump_and_thud", "Shatter", "Coin_(dropping)", "Chink_and_clink"},
+    "collisions": {"Slam", "Knock", "Shatter", "Coin_(dropping)", "Chink_and_clink"},
     "steps": {"Walk_and_footsteps"},
-    "music": {"Music"},
 }
 NEGATIVE_TAGS = {"Rain", "Wind", "Water", "Dog", "Bird", "Insect"}
 META_FILES = {
@@ -129,7 +128,7 @@ def load_manifest(path: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
     choose = sub.add_parser("select", help="Fetch metadata and create a small manifest")
@@ -143,7 +142,7 @@ def main() -> None:
     download = sub.add_parser("download", help="Download only manifest-listed audio")
     download.add_argument("--max-gb", type=float, default=5.0)
     sub.add_parser("status", help="Count present and missing clips")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if args.command == "select":
         fetch_metadata()
         rows = select(

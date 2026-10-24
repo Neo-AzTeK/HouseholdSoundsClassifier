@@ -1,72 +1,66 @@
 {
-  "checkpoint": "/home/mixcraftio/Documents/Twente/IOT/Training/household_sound_model/artifacts/household_sound.pt",
-  "manifest_sha256": "ccd9e76c2aa97f9e9cec1adf52816b2a10292e9f9486f92e89bdd885e155bc14",
-  "epoch": 18,
+  "checkpoint": "/home/mixcraftio/Documents/Twente/IOT/Project/HouseholdSoundsClassifier/artifacts/household_sound.pt",
+  "manifest_sha256": "28546422f6bcae323e00b3f055cc35b04a925fd4581cc0c081165b8d7efa5683",
+  "epoch": 23,
   "validation": {
     "voices": {
-      "precision": 0.7059,
-      "recall": 0.5455,
-      "f1": 0.6154,
-      "support": 44
+      "threshold": 0.54,
+      "precision": 0.75,
+      "recall": 0.8644,
+      "f1": 0.8031,
+      "support": 59
     },
     "machines": {
-      "precision": 0.6786,
-      "recall": 0.475,
-      "f1": 0.5588,
-      "support": 40
+      "threshold": 0.62,
+      "precision": 0.5833,
+      "recall": 0.7179,
+      "f1": 0.6437,
+      "support": 39
     },
     "collisions": {
-      "precision": 0.4444,
-      "recall": 0.5714,
-      "f1": 0.5,
-      "support": 42
+      "threshold": 0.53,
+      "precision": 0.5574,
+      "recall": 0.5862,
+      "f1": 0.5714,
+      "support": 58
     },
     "steps": {
-      "precision": 0.4821,
-      "recall": 0.675,
-      "f1": 0.5625,
-      "support": 40
-    },
-    "music": {
-      "precision": 0.5439,
-      "recall": 0.7381,
-      "f1": 0.6263,
-      "support": 42
+      "threshold": 0.61,
+      "precision": 0.5682,
+      "recall": 0.6579,
+      "f1": 0.6098,
+      "support": 38
     }
   },
   "test": {
     "voices": {
-      "precision": 0.6471,
-      "recall": 0.4889,
-      "f1": 0.557,
-      "support": 45
+      "threshold": 0.54,
+      "precision": 0.7963,
+      "recall": 0.8113,
+      "f1": 0.8037,
+      "support": 53
     },
     "machines": {
-      "precision": 0.5357,
-      "recall": 0.3571,
-      "f1": 0.4286,
-      "support": 42
+      "threshold": 0.62,
+      "precision": 0.5909,
+      "recall": 0.5532,
+      "f1": 0.5714,
+      "support": 47
     },
     "collisions": {
-      "precision": 0.4697,
-      "recall": 0.7045,
-      "f1": 0.5636,
-      "support": 44
+      "threshold": 0.53,
+      "precision": 0.5254,
+      "recall": 0.6596,
+      "f1": 0.5849,
+      "support": 47
     },
     "steps": {
-      "precision": 0.386,
-      "recall": 0.55,
-      "f1": 0.4536,
-      "support": 40
-    },
-    "music": {
-      "precision": 0.6471,
-      "recall": 0.5238,
-      "f1": 0.5789,
-      "support": 42
+      "threshold": 0.61,
+      "precision": 0.5676,
+      "recall": 0.7,
+      "f1": 0.6269,
+      "support": 30
     }
   },
-  "limitations": "FSD50K has clip-level labels; these are proxy window metrics, not room performance.",
-  "inference_silence_rms": 0.0005,
-  "test_after_silence_gate": "F1 values unchanged; 2 of 233 loudest test windows gated."
+  "inference_silence_rms": 0.0005
 }

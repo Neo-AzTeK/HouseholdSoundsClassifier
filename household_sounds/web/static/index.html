@@ -3,14 +3,20 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Household Sound Classifier</title>
+  <title>Household Sound Classifier &amp; Studio</title>
   <link rel="stylesheet" href="/static/style.css">
   <script src="/static/app.js" defer></script>
 </head>
 <body>
   <div class="container">
     <header>
-      <h1>Household Sound Classifier</h1>
+      <div class="header-main">
+        <h1>Household Sound Classifier</h1>
+        <div class="nav-tabs">
+          <button id="tab-btn-live" class="nav-tab active" type="button">🎙️ Live Classifier &amp; Tuning</button>
+          <button id="tab-btn-studio" class="nav-tab" type="button">✂️ Dataset Studio</button>
+        </div>
+      </div>
     </header>
  
     <div id="https-warning" class="warning-banner" style="display: none;">
@@ -18,166 +24,384 @@
       <a id="https-link" href="#">Switch to HTTPS here</a> to enable microphone access.
     </div>
 
-    <!-- Controls & Status -->
-    <section class="card">
-      <div class="card-header">
-        <h2>Audio Input</h2>
-        <span id="status-badge" class="badge">Ready</span>
-      </div>
+    <!-- ==================================================================== -->
+    <!-- TAB 1: LIVE CLASSIFIER & TUNING                                      -->
+    <!-- ==================================================================== -->
+    <div id="tab-live" class="tab-panel active">
+      <!-- Controls & Status -->
+      <section class="card">
+        <div class="card-header">
+          <h2>Audio Input</h2>
+          <span id="status-badge" class="badge">Ready</span>
+        </div>
 
-      <!-- Source Selector -->
-      <div class="control-row" style="margin-bottom: 16px;">
-        <label class="control-label">Input Source</label>
-        <div class="segmented-control">
-          <label class="segment active">
-            <input type="radio" name="input-source" value="browser" id="source-browser" checked>
-            <span>🎙️ Browser Mic</span>
+        <!-- Source Selector -->
+        <div class="control-row" style="margin-bottom: 16px;">
+          <label class="control-label">Input Source</label>
+          <div class="segmented-control">
+            <label class="segment active">
+              <input type="radio" name="input-source" value="browser" id="source-browser" checked>
+              <span>🎙️ Browser Mic</span>
+            </label>
+            <label class="segment">
+              <input type="radio" name="input-source" value="thingy" id="source-thingy">
+              <span>📡 Thingy:53 Stream</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Browser Microphone Controls -->
+        <div id="browser-controls">
+          <div class="button-group">
+            <button id="start" type="button" class="btn btn-primary">Start Microphone</button>
+            <button id="stop" type="button" class="btn btn-secondary" disabled>Stop</button>
+          </div>
+          <p class="note">Requires microphone permission. Audio is processed in real time and is never stored.</p>
+        </div>
+
+        <!-- Thingy BLE Stream Controls -->
+        <div id="thingy-controls" style="display: none;">
+          <!-- BLE Direct Connection Box -->
+          <div class="ble-connect-box">
+            <div class="ble-info">
+              <div class="ble-title-row">
+                <span id="ble-status-badge" class="badge">BLE Disconnected</span>
+                <span id="ble-device-name" class="meta-label">Not connected</span>
+              </div>
+              <div id="ble-details" class="meta-sub" style="display: none;">
+                <span id="ble-address">--</span> · <span id="ble-rssi">RSSI: --</span>
+              </div>
+            </div>
+            <div class="button-group">
+              <button id="ble-connect-btn" type="button" class="btn btn-primary">Connect Thingy (BLE)</button>
+              <button id="ble-disconnect-btn" type="button" class="btn btn-secondary" style="display: none;">Disconnect BLE</button>
+            </div>
+          </div>
+
+          <div class="thingy-meta-grid" style="margin-top: 14px;">
+            <div class="thingy-meta-item">
+              <span class="meta-label">Selected Node</span>
+              <select id="thingy-node-select" class="form-select">
+                <option value="all">All Heard Nodes</option>
+                <option value="0">Node 0 (Central)</option>
+                <option value="1">Node 1</option>
+                <option value="2">Node 2</option>
+                <option value="3">Node 3</option>
+              </select>
+            </div>
+            <div class="thingy-meta-item">
+              <span class="meta-label">Stream Status</span>
+              <span id="thingy-link-badge" class="badge">Waiting for packets...</span>
+            </div>
+            <div class="thingy-meta-item">
+              <span class="meta-label">Packet Rate</span>
+              <span id="thingy-rate-val" class="meta-value">0.0 pkts/s</span>
+            </div>
+          </div>
+          <div class="button-group" style="margin-top: 10px;">
+            <button id="thingy-sim-btn" type="button" class="btn btn-secondary">Simulate Stream (Test)</button>
+          </div>
+          <p class="note">Listening directly to Nordic Thingy:53 hardware (companded ~4,031 Hz mono).</p>
+        </div>
+
+        <div class="meter-group" style="margin-top: 16px;">
+          <label for="level-bar">Input Level</label>
+          <div class="meter-track">
+            <div id="level-bar" class="meter-fill"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Runtime & Backend Tooling -->
+      <section class="card">
+        <div class="card-header">
+          <h2>Inference Backend &amp; Controls</h2>
+          <span id="latency-badge" class="badge badge-info">Latency: --</span>
+        </div>
+
+        <div class="control-row">
+          <label class="control-label">Execution Backend</label>
+          <div class="segmented-control">
+            <label class="segment">
+              <input type="radio" name="backend" value="cpu" id="radio-cpu" checked>
+              <span>CPU (PyTorch)</span>
+            </label>
+            <label class="segment" id="segment-npu">
+              <input type="radio" name="backend" value="npu" id="radio-npu">
+              <span>Hailo NPU (Hailo-10H)</span>
+            </label>
+          </div>
+        </div>
+        <div id="backend-status-note" class="note">Active: CPU (PyTorch)</div>
+
+        <div class="control-row checkbox-row" style="margin-top: 12px;">
+          <label>
+            <input type="checkbox" id="silence-gate" checked>
+            <span>Enable silence gate (suppress noise below baseline)</span>
           </label>
-          <label class="segment">
-            <input type="radio" name="input-source" value="thingy" id="source-thingy">
-            <span>📡 Thingy:53 Stream</span>
+        </div>
+        <div class="control-row checkbox-row" style="margin-top: 8px;">
+          <label>
+            <input type="checkbox" id="agc-toggle" checked>
+            <span>Automatic Gain Control / Mic Boost (elevates quiet acoustic inputs)</span>
           </label>
         </div>
-      </div>
+      </section>
 
-      <!-- Browser Microphone Controls -->
-      <div id="browser-controls">
-        <div class="button-group">
-          <button id="start" type="button" class="btn btn-primary">Start Microphone</button>
-          <button id="stop" type="button" class="btn btn-secondary" disabled>Stop</button>
+      <!-- Prediction Scores with Individual Threshold Sliders -->
+      <section class="card">
+        <div class="card-header">
+          <h2>Detection Scores &amp; Threshold Tuning</h2>
+          <span id="updated-text" class="timestamp">Waiting for audio...</span>
         </div>
-        <p class="note">Requires microphone permission. Audio is processed in real time and is never stored.</p>
-      </div>
+        <p class="note" style="margin-bottom: 14px;">Adjust thresholds to tune sensitivity in real time. The vertical line marks each class trigger cutoff.</p>
 
-      <!-- Thingy BLE Stream Controls -->
-      <div id="thingy-controls" style="display: none;">
-        <div class="thingy-meta-grid">
-          <div class="thingy-meta-item">
-            <span class="meta-label">Selected Node</span>
-            <select id="thingy-node-select" class="form-select">
-              <option value="all">All Heard Nodes</option>
-              <option value="0">Node 0 (Central)</option>
-              <option value="1">Node 1</option>
-              <option value="2">Node 2</option>
-              <option value="3">Node 3</option>
-            </select>
+        <div class="scores-list">
+          <!-- Voices -->
+          <div class="score-row" data-label="voices">
+            <div class="score-info">
+              <span class="label-name">Voices</span>
+              <div class="score-meta">
+                <span class="th-label">Cutoff: <strong class="th-val">71%</strong></span>
+                <span class="score-percent">0%</span>
+              </div>
+            </div>
+            <div class="bar-track">
+              <div class="threshold-marker" style="left: 71%;"></div>
+              <div class="bar-fill"></div>
+            </div>
+            <div class="th-slider-container">
+              <span class="slider-hint">Sensitivity:</span>
+              <input type="range" class="th-slider" data-label="voices" min="10" max="95" value="71" step="1">
+            </div>
           </div>
-          <div class="thingy-meta-item">
-            <span class="meta-label">Stream Status</span>
-            <span id="thingy-link-badge" class="badge">Waiting for packets...</span>
+
+          <!-- Machines -->
+          <div class="score-row" data-label="machines">
+            <div class="score-info">
+              <span class="label-name">Machines</span>
+              <div class="score-meta">
+                <span class="th-label">Cutoff: <strong class="th-val">60%</strong></span>
+                <span class="score-percent">0%</span>
+              </div>
+            </div>
+            <div class="bar-track">
+              <div class="threshold-marker" style="left: 60%;"></div>
+              <div class="bar-fill"></div>
+            </div>
+            <div class="th-slider-container">
+              <span class="slider-hint">Sensitivity:</span>
+              <input type="range" class="th-slider" data-label="machines" min="10" max="95" value="60" step="1">
+            </div>
           </div>
-          <div class="thingy-meta-item">
-            <span class="meta-label">Packet Rate</span>
-            <span id="thingy-rate-val" class="meta-value">0.0 pkts/s</span>
+
+          <!-- Collisions -->
+          <div class="score-row" data-label="collisions">
+            <div class="score-info">
+              <span class="label-name">Collisions</span>
+              <div class="score-meta">
+                <span class="th-label">Cutoff: <strong class="th-val">57%</strong></span>
+                <span class="score-percent">0%</span>
+              </div>
+            </div>
+            <div class="bar-track">
+              <div class="threshold-marker" style="left: 57%;"></div>
+              <div class="bar-fill"></div>
+            </div>
+            <div class="th-slider-container">
+              <span class="slider-hint">Sensitivity:</span>
+              <input type="range" class="th-slider" data-label="collisions" min="10" max="95" value="57" step="1">
+            </div>
+          </div>
+
+          <!-- Steps -->
+          <div class="score-row" data-label="steps">
+            <div class="score-info">
+              <span class="label-name">Steps</span>
+              <div class="score-meta">
+                <span class="th-label">Cutoff: <strong class="th-val">68%</strong></span>
+                <span class="score-percent">0%</span>
+              </div>
+            </div>
+            <div class="bar-track">
+              <div class="threshold-marker" style="left: 68%;"></div>
+              <div class="bar-fill"></div>
+            </div>
+            <div class="th-slider-container">
+              <span class="slider-hint">Sensitivity:</span>
+              <input type="range" class="th-slider" data-label="steps" min="10" max="95" value="68" step="1">
+            </div>
           </div>
         </div>
-        <div class="button-group" style="margin-top: 10px;">
-          <button id="thingy-sim-btn" type="button" class="btn btn-secondary">Simulate Stream (Test)</button>
+
+        <div class="button-group" style="margin-top: 18px;">
+          <button id="save-thresholds-btn" type="button" class="btn btn-primary">💾 Save Thresholds to Model</button>
+          <button id="reset-thresholds-btn" type="button" class="btn btn-secondary">🔄 Reset to Defaults</button>
+          <span id="threshold-status-msg" class="meta-label" style="align-self: center;"></span>
         </div>
-        <p class="note">Listening directly to Nordic Thingy:53 hardware (companded ~4,031 Hz mono).</p>
-      </div>
+      </section>
 
-      <div class="meter-group" style="margin-top: 16px;">
-        <label for="level-bar">Input Level</label>
-        <div class="meter-track">
-          <div id="level-bar" class="meter-fill"></div>
+      <!-- Raw Diagnostics -->
+      <details class="card card-details">
+        <summary class="details-summary">Raw Telemetry &amp; JSON Output</summary>
+        <pre id="json-output">Waiting for inference data...</pre>
+      </details>
+    </div>
+
+    <!-- ==================================================================== -->
+    <!-- TAB 2: DATASET STUDIO (RECORD, ANNOTATE, TRAIN)                      -->
+    <!-- ==================================================================== -->
+    <div id="tab-studio" class="tab-panel" style="display: none;">
+      <!-- Step 1: Record Take -->
+      <section class="card">
+        <div class="card-header">
+          <h2>1. Record Audio Take</h2>
+          <span id="studio-rec-badge" class="badge">Idle</span>
         </div>
-      </div>
-    </section>
+        <p class="note">Record freeform audio from your Thingy:53 (or microphone) to build real hardware training samples.</p>
 
-    <!-- Runtime & Backend Tooling -->
-    <section class="card">
-      <div class="card-header">
-        <h2>Inference Backend &amp; Controls</h2>
-        <span id="latency-badge" class="badge badge-info">Latency: --</span>
-      </div>
-
-      <div class="control-row">
-        <label class="control-label">Execution Backend</label>
-        <div class="segmented-control">
-          <label class="segment">
-            <input type="radio" name="backend" value="cpu" id="radio-cpu" checked>
-            <span>CPU (PyTorch)</span>
-          </label>
-          <label class="segment" id="segment-npu">
-            <input type="radio" name="backend" value="npu" id="radio-npu">
-            <span>Hailo NPU (Hailo-10H)</span>
-          </label>
-        </div>
-      </div>
-      <div id="backend-status-note" class="note">Active: CPU (PyTorch)</div>
-
-      <div class="control-row">
-        <label for="threshold-slider" class="control-label">Detection Threshold: <strong id="threshold-val">50%</strong></label>
-        <input type="range" id="threshold-slider" min="10" max="90" value="50" step="5">
-      </div>
-
-      <div class="control-row checkbox-row">
-        <label>
-          <input type="checkbox" id="silence-gate" checked>
-          <span>Enable silence gate (suppress noise below baseline)</span>
-        </label>
-      </div>
-    </section>
-
-    <!-- Prediction Scores -->
-    <section class="card">
-      <div class="card-header">
-        <h2>Detection Scores</h2>
-        <span id="updated-text" class="timestamp">Waiting for audio...</span>
-      </div>
-
-      <div class="scores-list">
-        <div class="score-row" data-label="voices">
-          <div class="score-info">
-            <span class="label-name">Voices</span>
-            <span class="score-percent">0%</span>
+        <div class="control-row" style="margin: 14px 0;">
+          <label class="control-label">Recording Source</label>
+          <div class="segmented-control">
+            <label class="segment active">
+              <input type="radio" name="studio-source" value="thingy" id="studio-source-thingy" checked>
+              <span>📡 Thingy:53 Stream</span>
+            </label>
+            <label class="segment">
+              <input type="radio" name="studio-source" value="browser" id="studio-source-browser">
+              <span>🎙️ Browser Mic</span>
+            </label>
           </div>
-          <div class="bar-track"><div class="bar-fill"></div></div>
         </div>
 
-        <div class="score-row" data-label="machines">
-          <div class="score-info">
-            <span class="label-name">Machines</span>
-            <span class="score-percent">0%</span>
+        <div class="button-group" style="margin-bottom: 12px;">
+          <button id="studio-record-btn" type="button" class="btn btn-primary">🔴 Start Recording</button>
+          <button id="studio-stop-btn" type="button" class="btn btn-danger" disabled>⏹️ Stop Recording</button>
+          <span id="studio-timer" class="recording-timer">00:00.0</span>
+        </div>
+      </section>
+
+      <!-- Step 2: Interactive Waveform & Timing Selection -->
+      <section class="card" id="studio-waveform-section" style="display: none;">
+        <div class="card-header">
+          <h2>2. Set Timings &amp; Annotate Labels</h2>
+          <span id="studio-take-label" class="badge badge-info">Take: --</span>
+        </div>
+        <p class="note">Drag across the waveform or click to select start and end timings. Audition your segment below.</p>
+
+        <!-- Waveform Canvas -->
+        <div class="waveform-container">
+          <canvas id="waveform-canvas" width="680" height="130"></canvas>
+          <div class="waveform-time-axis">
+            <span>0.0s</span>
+            <span id="waveform-mid-time">--</span>
+            <span id="waveform-end-time">--</span>
           </div>
-          <div class="bar-track"><div class="bar-fill"></div></div>
         </div>
 
-        <div class="score-row" data-label="collisions">
-          <div class="score-info">
-            <span class="label-name">Collisions</span>
-            <span class="score-percent">0%</span>
+        <!-- Audio Player -->
+        <div class="audio-player-wrap" style="margin-top: 10px;">
+          <audio id="studio-audio" controls style="width: 100%;"></audio>
+        </div>
+
+        <!-- Timing inputs -->
+        <div class="timing-controls-grid" style="margin-top: 14px;">
+          <div class="timing-input-item">
+            <label class="meta-label" for="time-start">Start Time (s)</label>
+            <input type="number" id="time-start" class="form-input" min="0" step="0.1" value="0.0">
           </div>
-          <div class="bar-track"><div class="bar-fill"></div></div>
-        </div>
-
-        <div class="score-row" data-label="steps">
-          <div class="score-info">
-            <span class="label-name">Steps</span>
-            <span class="score-percent">0%</span>
+          <div class="timing-input-item">
+            <label class="meta-label" for="time-end">End Time (s)</label>
+            <input type="number" id="time-end" class="form-input" min="0.1" step="0.1" value="1.0">
           </div>
-          <div class="bar-track"><div class="bar-fill"></div></div>
-        </div>
-
-        <div class="score-row" data-label="music">
-          <div class="score-info">
-            <span class="label-name">Music</span>
-            <span class="score-percent">0%</span>
+          <div class="timing-input-item">
+            <label class="meta-label">Selected Duration</label>
+            <span id="time-duration-display" class="meta-value">1.0 s</span>
           </div>
-          <div class="bar-track"><div class="bar-fill"></div></div>
+          <div class="timing-input-item" style="display: flex; align-items: flex-end;">
+            <button id="btn-quick-1s" type="button" class="btn btn-secondary" style="width: 100%;">Snap to 1.0s Window</button>
+          </div>
         </div>
-      </div>
-    </section>
 
-    <!-- Raw Diagnostics -->
-    <details class="card card-details">
-      <summary class="details-summary">Raw Telemetry &amp; JSON Output</summary>
-      <pre id="json-output">Waiting for inference data...</pre>
-    </details>
+        <!-- Label Selectors (Multi-label Checkboxes) -->
+        <div class="label-selector-wrap" style="margin-top: 16px;">
+          <label class="control-label" style="display: block; margin-bottom: 8px;">Assign Labels (What sounds are in this window?):</label>
+          <div class="checkbox-pills">
+            <label class="pill">
+              <input type="checkbox" name="studio-label" value="voices">
+              <span>🗣️ Voices</span>
+            </label>
+            <label class="pill">
+              <input type="checkbox" name="studio-label" value="machines">
+              <span>⚙️ Machines</span>
+            </label>
+            <label class="pill">
+              <input type="checkbox" name="studio-label" value="collisions">
+              <span>💥 Collisions</span>
+            </label>
+            <label class="pill">
+              <input type="checkbox" name="studio-label" value="steps">
+              <span>👟 Steps</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="button-group" style="margin-top: 18px;">
+          <button id="studio-add-segment-btn" type="button" class="btn btn-primary">➕ Save Segment to Dataset</button>
+          <span id="studio-annotate-msg" class="meta-label" style="align-self: center;"></span>
+        </div>
+      </section>
+
+      <!-- Step 3: Dataset Summary & One-Click Training -->
+      <section class="card">
+        <div class="card-header">
+          <h2>3. Dataset Library &amp; Training</h2>
+          <span id="studio-dataset-total" class="badge badge-live">0 Segments</span>
+        </div>
+
+        <!-- Label counts pills -->
+        <div id="studio-label-counts" class="dataset-counts-row">
+          <span class="count-pill">Voices: <strong>0</strong></span>
+          <span class="count-pill">Machines: <strong>0</strong></span>
+          <span class="count-pill">Collisions: <strong>0</strong></span>
+          <span class="count-pill">Steps: <strong>0</strong></span>
+          <span class="count-pill">Music: <strong>0</strong></span>
+        </div>
+
+        <!-- Segments table/list -->
+        <div class="segments-list-wrap" style="margin-top: 14px;">
+          <div id="studio-segments-list" class="segments-list">
+            <div class="empty-state">No custom segments recorded yet. Record a take above and annotate segments!</div>
+          </div>
+        </div>
+
+        <!-- Fine-tune trigger box -->
+        <div class="training-box" style="margin-top: 20px;">
+          <div class="training-header">
+            <h3>Fine-Tune Model with Custom Dataset</h3>
+            <span id="train-status-badge" class="badge">Ready</span>
+          </div>
+          <p class="note">Merges your real Thingy segments with the fusion dataset and updates model weights in ~30s on CPU.</p>
+
+          <div class="training-controls" style="margin-top: 12px; display: flex; gap: 12px; align-items: center;">
+            <label class="meta-label">Epochs:
+              <input type="number" id="train-epochs" class="form-input" value="10" min="1" max="50" style="width: 70px; display: inline-block; margin-left: 6px;">
+            </label>
+            <button id="studio-train-btn" type="button" class="btn btn-primary">🚀 Train Model on Custom Dataset</button>
+          </div>
+
+          <div id="train-progress-wrap" style="margin-top: 12px; display: none;">
+            <div class="progress-bar-track">
+              <div id="train-progress-bar" class="progress-bar-fill" style="width: 0%;"></div>
+            </div>
+            <div id="train-progress-text" class="meta-sub" style="margin-top: 4px;">Preparing training run...</div>
+          </div>
+        </div>
+      </section>
+    </div>
 
     <footer>
-      Thingy:53 Sound Classification System · Audio resampled and companded to match hardware stream
+      Thingy:53 Sound Classification &amp; Dataset Studio · Resampled to 16 kHz mono matching hardware stream
     </footer>
   </div>
 </body>
