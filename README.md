@@ -1,13 +1,26 @@
 # Household Sounds Classifier
 
-Real-time audio processing pipeline and compact multi-label neural network designed to continuously detect household sounds from a single microphone channel.
+Real-time, ultra-compact edge audio processing pipeline and multi-label convolutional neural network designed to continuously detect household sounds from a Nordic Thingy:53 microphone over Bluetooth Low Energy (BLE).
 
-The model scores 5 independent categories simultaneously:
-1. **Voices** (speech, conversation, singing)
-2. **Machines** (appliances, fans, microwaves, power tools)
-3. **Collisions** (impacts, dropped items, door slams)
-4. **Steps** (footsteps, walking)
-5. **Music** (instrumental or music playback)
+The model continuously classifies 3 orthogonal, physically grounded acoustic categories:
+1. **`voices`** (speech, conversation, vocal formants, baby crying)
+2. **`machines`** (appliances, fans, microwaves, vacuum cleaners, washing machines)
+3. **`impacts`** (footsteps, walking, door knocks, dropped objects, glass breaking)
+
+> [!TIP]
+> **Detailed Model & Architectural Walkthrough:**
+> For an in-depth explanation with diagrams of the neural network layers, DSP filters, STFT spectrograms, and training math, see [**`docs/Household Sound Model.md`**](docs/Household%20Sound%20Model.md).
+
+---
+
+## Key Highlights
+
+- **Ultra-Compact Footprint:** Only **79,683 parameters** (323.6 KB PyTorch, 313.1 KB ONNX opset 15, $< 1.8\text{ MB}$ RAM).
+- **Sub-1ms Latency:** $\approx 1.0\text{ ms}$ inference on Raspberry Pi 5 CPU; instantaneous on Hailo-8 NPU.
+- **Dual Statistical Pooling:** Combines Adaptive Average Pooling (formants/drones) and Adaptive Max Pooling (transient attack peaks).
+- **Embedded Audio Pipeline:** Nordic Thingy:53 PDM microphone (16.1 kHz) $\to$ 4:1 FIR decimation $\to$ 8-bit non-linear companding $\to$ BLE streaming at 28 packets/s.
+- **Ambient Noise & Music Immunity:** Stationarity-aware AGC with crest-factor analysis and 80 Hz sub-bass filtering rejects quiet room hiss and music false alarms.
+- **Multi-Sound Superposition:** Loudness-calibrated Mixup 2.0 training enables simultaneous co-occurring triggers (e.g., speech + footsteps).
 
 ---
 
@@ -16,125 +29,107 @@ The model scores 5 independent categories simultaneously:
 ```text
 .
 ├── pyproject.toml              # Unified dependencies, build system & CLI console scripts
-├── README.md                   # Project overview and quickstart guide
-├── .gitignore                  # Single consolidated git ignore
+├── README.md                   # Project landing page & quickstart guide
 ├── artifacts/                  # Production models & compiled binaries
-│   ├── household_sound.pt      # Active PyTorch checkpoint (324 KB)
-│   ├── household_sound.onnx    # Validated ONNX graph (313 KB)
-│   ├── household_sound.alls    # Hailo model script
-│   ├── household_sound.hef     # Hailo compiled binary (when compiled)
-│   ├── household_sound.metrics.json
-│   └── archive/                # Historical experiment candidates (v1, v2, v3)
+│   ├── household_sound.pt      # Active PyTorch checkpoint (79,683 params, 323.6 KB)
+│   ├── household_sound.onnx    # Validated ONNX opset 15 graph (313.1 KB)
+│   ├── household_sound.alls    # Hailo model compilation script
+│   └── household_sound.metrics.json # Production validation & test evaluation metrics
 ├── data/                       # Dataset manifests & caches (gitignored)
-│   ├── manifest.jsonl          # Reproducible dataset manifest with licenses
-│   └── cache/                  # Preprocessed Thingy-stream audio cache
-├── docs/                       # Project documentation, figures, math notes
-│   ├── assets/                 # Architecture figures and spectrogram plots
-│   ├── TRAINING_EXPLAINED.md   # Mathematical derivations and DSP explanations
-│   └── RUN_REPORT.md           # Benchmark and evaluation report
-└── household_sounds/           # Single standard installable Python package
-    ├── __init__.py             # Exports SoundCNN, Predictor, and constants
-    ├── model.py                # SoundCNN architecture & DSP preprocessing
-    ├── predict.py              # Dual CPU (PyTorch) / NPU (Hailo) inference engine
-    ├── dataset.py              # FSD50K downloader & dataset loader
-    ├── train.py                # Multi-label CNN training script
-    ├── hailo/                  # Hailo-10H NPU compilation toolchain
-    │   ├── export_onnx.py      # PyTorch -> ONNX export & verification
-    │   ├── calibration.py      # INT8 PTQ calibration dataset generator
-    │   ├── compile.py          # Compile ONNX -> HEF (SDK / CLI / Docker)
-    │   └── pipeline.sh         # 1-step compilation pipeline
-    └── web/                    # Browser microphone test & streaming server
-        ├── app.py              # FastAPI server with WebSocket streaming
-        ├── streaming.py        # Stream buffering & windowing
-        └── static/             # Clean web frontend (HTML/CSS/JS/Worklet)
+│   ├── manifest_combined.jsonl # Complete training manifest (FSD50K + ESC-50 + Custom)
+│   ├── manifest_fusion.jsonl   # Clean curated fusion manifest
+│   └── manifest.jsonl          # Base public dataset manifest
+├── docs/                       # Illustrated documentation & figures
+│   ├── Household Sound Model.md # Comprehensive illustrated architectural deep dive
+│   ├── generate_figures.py     # Script to reproduce architectural PNG diagrams
+│   └── assets/                 # Generated spectrograms and architecture diagrams
+│       ├── model_pipeline.png
+│       ├── model_architecture.png
+│       ├── first_convolution.png
+│       └── spectrogram_examples.png
+├── household_sounds/           # Core installable Python package
+│   ├── __init__.py             # Exports SoundCNN, Predictor, and constants
+│   ├── model.py                # SoundCNN architecture, STFT, and DSP FIR filters
+│   ├── predict.py              # Stationarity-aware AGC, high-pass filter & inference engine
+│   ├── train.py                # Superposition Mixup 2.0 training with Asymmetric Loss (ASL)
+│   ├── dataset.py              # FSD50K data fetcher & dataset loader
+│   ├── build_fusion_manifest.py# Multi-dataset fusion curator (ESC-50 + FSD50K)
+│   ├── thingy_bridge.py        # Asynchronous Bleak BLE manager for Nordic Thingy:53
+│   ├── dataset_studio.py       # In-situ recording take manager & fine-tuning engine
+│   ├── hailo/                  # Hailo NPU compilation toolchain
+│   │   ├── export_onnx.py      # PyTorch -> ONNX export & numerical verification
+│   │   ├── calibration.py      # INT8 PTQ calibration dataset generator
+│   │   └── compile.py          # Compile ONNX -> HEF
+│   └── web/                    # Real-time WebSocket streaming server & Web UI
+│       ├── app.py              # FastAPI application with REST & WebSocket endpoints
+│       └── static/             # Responsive HTML5/Canvas UI with live threshold tuning
+└── tests/                      # Automated regression test suite (20/20 passed)
 ```
 
 ---
 
 ## Quickstart with `uv`
 
-All commands are run from the project root using [`uv`](https://docs.astral.sh/uv/):
+All commands run from the project root using [`uv`](https://docs.astral.sh/uv/):
 
-### 1. Run the Web Interface (Browser Mic or Thingy:53 Stream)
+### 1. Launch the Live Web Dashboard & BLE Streamer
 
 ```bash
-# Localhost:
-uv run sound-web
+# Launch server with automatic Thingy:53 BLE connection on port 8000:
+uv run sound-web --ble --port 8000
 
-# Or accessible across your local Wi-Fi / network (with auto-generated SSL):
-uv run sound-web --network
+# Or expose across local Wi-Fi with auto-generated SSL (for mobile browser mic):
+uv run sound-web --network --ble --port 8000
 ```
 
-The web UI provides an **Input Source** selector:
-- **🎙️ Browser Mic**: Real-time microphone capture through your phone or laptop.
-- **📡 Thingy:53 Stream**: Live classification of audio streamed from Nordic Thingy:53 hardware.
+Navigate to **`http://localhost:8000`** in your browser to inspect live spectrogram waveforms, real-time prediction bars, and tune sensitivity thresholds interactively.
 
-#### Linking with `thingy-ranging`
+### 2. Run Automated Regression Tests
 
-Run `gateway.py` with the forwarder flag pointing to `sound-web`:
 ```bash
-# In the thingy-ranging repository (run on port 8080 to avoid collision):
-uv run python tools/gateway.py --port 8080 --classifier-url ws://127.0.0.1:8000/ws/thingy
+uv run pytest tests/ -v
 ```
 
-Or use the standalone bridge tool:
-```bash
-# Forward stdin chunks:
-your_stream_command | uv run sound-bridge stdin
-
-# Or replay a simulated stream for testing:
-uv run sound-bridge replay --sound tone --duration 10
-```
-
-### 2. Test Model Inference (CPU or Hailo NPU)
+### 3. Test File Inference (CPU or Hailo NPU)
 
 ```bash
 # CPU mode:
-uv run sound-predict file path/to/sound.wav --summary
+uv run sound-predict file path/to/recording.wav --summary
 
 # Hailo NPU mode:
-uv run sound-predict --backend npu file path/to/sound.wav --summary
+uv run sound-predict --backend npu file path/to/recording.wav --summary
 ```
 
-### 3. Hailo-10H HEF Compilation Pipeline
-
-Compile the PyTorch checkpoint into a Hailo-10H `.hef` file:
+### 4. Export ONNX Graph & Validate
 
 ```bash
-# Run the complete pipeline (Export ONNX -> Generate Calibration Data -> Compile HEF)
-./household_sounds/hailo/pipeline.sh hailo10h
+uv run python household_sounds/hailo/export_onnx.py
 ```
 
-Individual commands:
-- **Export to ONNX**: `uv run sound-export`
-- **Generate Calibration Dataset**: `uv run python -m household_sounds.hailo.calibration --num-samples 128`
-- **Compile to HEF**: `uv run sound-compile --hw-arch hailo10h`
+### 5. Retrain Model with Superposition & Noise Immunity
+
+```bash
+uv run sound-train --epochs 25 --output artifacts/household_sound.pt
+```
 
 ---
 
-## Running on the Raspberry Pi 5 (with HTTPS for Browser Mic)
+## Production Test Metrics
 
-On the Raspberry Pi 5, simply run:
+| Sound Class | Test Precision | Test Recall | **Test $F_1$ Score** | Default Sensitivity Cutoff |
+| :--- | :--- | :--- | :--- | :--- |
+| **`voices`** | **91.7%** | 83.0% | **0.8713** | **62%** |
+| **`machines`** | 53.8% | 29.8% | **0.5243** | **68%** |
+| **`impacts`** | 61.0% | **89.7%** | **0.7262** | **51%** |
+| **Macro Average**| **68.8%** | **67.5%** | **0.7073** | — |
 
-```bash
-uv run sound-web --network
-```
-
-Then navigate to **`https://pi-team5.local:8000`** in your browser.
+- **Simultaneous Superposition:** Voice + Knock triggers both categories concurrently.
+- **Ambient Noise & Music Immunity:** 88.2% rejection rate on diverse musical instruments; 1.2x AGC gain cap on quiet room hiss.
 
 ---
 
-## Dataset & Training Commands
+## Deep Dive Architecture & Documentation
 
-```bash
-# Inspect dataset status:
-uv run sound-dataset status
+For the full illustrated technical reference, including layer equations, parameter budgets, and receptive field proofs, see:
 
-# Download required subset clips:
-uv run sound-dataset download --max-gb 5
-
-# Train a new candidate model:
-uv run sound-train --epochs 25 --output artifacts/candidate.pt
-```
-
-For mathematical derivations of the DSP filters, STFT windowing, and companding, see [`docs/TRAINING_EXPLAINED.md`](docs/TRAINING_EXPLAINED.md).
+👉 [**`docs/Household Sound Model.md`**](docs/Household%20Sound%20Model.md)
