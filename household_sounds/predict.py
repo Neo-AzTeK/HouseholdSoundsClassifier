@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from scipy import signal
 import torch
 
 from household_sounds.model import (
@@ -30,6 +31,9 @@ from household_sounds.model import (
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CHECKPOINT = REPO_ROOT / "artifacts" / "household_sound.pt"
 DEFAULT_HEF = REPO_ROOT / "artifacts" / "household_sound.hef"
+# 80 Hz 1st-order high-pass filter coefficients at 4,031.25 Hz stream rate
+HP_B = np.array([0.9412423, -0.9412423], dtype=np.float32)
+HP_A = np.array([1.0, -0.8824846], dtype=np.float32)
 
 
 class CpuBackend:
@@ -256,7 +260,11 @@ class Predictor:
     def predict(self, window: np.ndarray) -> dict[str, Any]:
         """Predict sound categories and return detailed metadata + latency."""
         window = fixed_window(window)
+        # 80 Hz high-pass to eliminate DC offset and sub-audible air/vibration rumble
+        window = signal.lfilter(HP_B, HP_A, window).astype(np.float32)
         rms = float(np.sqrt(np.mean(window * window)))
+        peak = float(np.max(np.abs(window)))
+        crest_factor = peak / max(rms, 1e-6)
 
         if self.use_silence_gate and rms < self.silence_rms:
             return {
@@ -269,10 +277,15 @@ class Predictor:
                 "gain": 1.0,
             }
 
-        # Automatic Gain Control (AGC) for low-amplitude acoustic microphone input
+        # Automatic Gain Control (AGC) with stationarity awareness:
+        # Avoid amplifying low-level stationary room noise/hiss (crest factor < 5.0 and low rms)
         gain_applied = 1.0
         if self.use_agc:
-            gain_applied = min(max(self.target_rms / max(rms, 1e-5), 0.5), self.max_agc_gain)
+            if rms < 0.0035 and crest_factor < 5.0:
+                max_gain = 1.2
+            else:
+                max_gain = self.max_agc_gain
+            gain_applied = min(max(self.target_rms / max(rms, 1e-5), 0.5), max_gain)
             window = np.clip(window * gain_applied, -1.0, 1.0).astype(np.float32)
 
         features = spectrogram(window)

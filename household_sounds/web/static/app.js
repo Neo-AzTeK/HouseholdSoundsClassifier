@@ -2,9 +2,9 @@ const labels = ['voices', 'machines', 'impacts'];
 
 // Model thresholds per label
 let thresholds = {
-  voices: 0.55,
-  machines: 0.64,
-  impacts: 0.61,
+  voices: 0.62,
+  machines: 0.68,
+  impacts: 0.51,
 };
 
 // DOM Elements: Navigation Tabs

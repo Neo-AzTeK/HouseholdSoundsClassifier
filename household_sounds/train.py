@@ -31,6 +31,10 @@ from household_sounds.model import (
 
 ROOT = Path(__file__).resolve().parent.parent
 
+# 80 Hz 1st-order high-pass filter coefficients at 4,031.25 Hz stream rate
+HP_B = np.array([0.9412423, -0.9412423], dtype=np.float32)
+HP_A = np.array([1.0, -0.8824846], dtype=np.float32)
+
 
 def apply_spec_augment(
     spec: torch.Tensor,
@@ -74,12 +78,15 @@ class Clips(Dataset):
         self.cache = ROOT / "data" / "cache"
         self.cache.mkdir(parents=True, exist_ok=True)
         if self.train:
-            # Oversample machines slightly to balance with voices
+            # Oversample machines and ambient/music negatives to balance with voices and impacts
             expanded: list[int] = []
             for i, r in enumerate(rows):
                 expanded.append(i)
                 if r["labels"].get("machines", 0):
                     # Add 1 additional copy of machine clips
+                    expanded.append(i)
+                elif sum(r["labels"].values()) == 0:
+                    # Add 1 additional copy of ambient noise / music clips
                     expanded.append(i)
             self.sample_indices = expanded
         else:
@@ -105,38 +112,57 @@ class Clips(Dataset):
         row_idx = self.sample_indices[index]
         row = self.rows[row_idx]
         if self.train and random.random() < self.silence_probability:
-            # Realistic physical room background noise: pinkish noise + 50Hz/100Hz room hum
-            # with random amplitude from 1e-4 to 2e-3 (typical room floor)
+            # Multi-level ambient background noise:
+            # 50% faint room floor (1e-4 to 2e-3)
+            # 50% loud continuous room HVAC, fan whoosh, and 50/100/120Hz hum (5e-3 to 3.5e-2)
             t = np.arange(WINDOW_SAMPLES) / STREAM_RATE
-            hum = 0.5 * np.sin(2 * np.pi * 50.0 * t) + 0.3 * np.sin(2 * np.pi * 100.0 * t)
+            hum = 0.5 * np.sin(2 * np.pi * 50.0 * t) + 0.3 * np.sin(2 * np.pi * 100.0 * t) + 0.2 * np.sin(2 * np.pi * 120.0 * t)
             white = np.random.normal(0, 1.0, WINDOW_SAMPLES)
             pink = signal.lfilter([0.15], [1.0, -0.85], white)
-            rms = random.uniform(1e-4, 2e-3)
-            window = (rms * (0.3 * hum + 0.7 * pink)).astype(np.float32)
+            if random.random() < 0.5:
+                rms = random.uniform(1e-4, 2e-3)
+            else:
+                # Loud ambient room noise / HVAC drone labeled strictly as all-zero negative
+                rms = random.uniform(5e-3, 3.5e-2)
+            window = (rms * (0.35 * hum + 0.65 * pink)).astype(np.float32)
+            window = signal.lfilter(HP_B, HP_A, window).astype(np.float32)
             target = np.zeros(len(LABELS), dtype=np.float32)
             return torch.from_numpy(spectrogram(window)), torch.from_numpy(target)
 
         window = self.window(row_idx)
         labels = dict(row["labels"])
+
         if self.train and random.random() < self.mix_probability:
+            # Calibrated multi-source superposition:
+            # Prefer pairing with different active class
             other_labels = [label for label in LABELS if not labels[label] and self.indices_by_label[label]]
             if other_labels:
-                other_index = random.choice(self.indices_by_label[random.choice(other_labels)])
+                chosen_label = random.choice(other_labels)
+                other_index = random.choice(self.indices_by_label[chosen_label])
                 other_window = self.window(other_index)
-                ratio = random.uniform(0.3, 0.7)
-                window = (1.0 - ratio) * window + ratio * other_window
+
+                # Loudness-calibrated mixing so neither sound drowns out the other
+                rms1 = max(float(np.sqrt(np.mean(window * window))), 1e-4)
+                rms2 = max(float(np.sqrt(np.mean(other_window * other_window))), 1e-4)
+                scale2 = (rms1 / rms2) * random.uniform(0.6, 1.4)
+                window = window + other_window * scale2
                 for label, value in self.rows[other_index]["labels"].items():
                     if value:
                         labels[label] = 1
 
         if self.train:
-            # Gain augmentation: randomly scale between 0.15x and 2.5x (-16 dB to +8 dB)
-            # Teaches network to identify sounds regardless of distance or microphone gain
-            gain = random.uniform(0.15, 2.5)
+            # Gain augmentation: randomly scale between 0.2x and 2.5x (-14 dB to +8 dB)
+            gain = random.uniform(0.2, 2.5)
             window = window * gain
 
+            # If clip is an ambient/music negative (all labels 0), ensure it has realistic volume
+            # so the model actively learns to reject loud music/background noise as machines
+            if sum(labels.values()) == 0:
+                current_rms = max(float(np.sqrt(np.mean(window * window))), 1e-5)
+                target_neg_rms = random.uniform(0.008, 0.04)
+                window = window * (target_neg_rms / current_rms)
+
             # Ambient room noise injection (30% chance): faint room hum + pink noise
-            # Prevents model from mistaking low-frequency room modes for machines
             if random.random() < 0.3:
                 t = np.arange(WINDOW_SAMPLES) / STREAM_RATE
                 hum = 0.5 * np.sin(2 * np.pi * 50.0 * t) + 0.3 * np.sin(2 * np.pi * 100.0 * t)
@@ -146,6 +172,7 @@ class Clips(Dataset):
 
             window = np.clip(window, -1.0, 1.0).astype(np.float32)
 
+        window = signal.lfilter(HP_B, HP_A, window).astype(np.float32)
         spec = torch.from_numpy(spectrogram(window))
         if self.train and random.random() < 0.5:
             spec = apply_spec_augment(spec)
@@ -222,7 +249,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--mix-probability",
         type=float,
-        default=0.3,
+        default=0.55,
         help="Chance of mixing a second clip into a training window",
     )
     parser.add_argument(
@@ -240,13 +267,13 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--asl-gamma-neg",
         type=float,
-        default=2.5,
+        default=1.8,
         help="ASL gamma_neg focusing parameter",
     )
     parser.add_argument(
         "--asl-clip",
         type=float,
-        default=0.05,
+        default=0.0,
         help="ASL margin clip for negative probabilities",
     )
     parser.add_argument("--output", type=Path, default=ROOT / "artifacts" / "household_sound.pt")

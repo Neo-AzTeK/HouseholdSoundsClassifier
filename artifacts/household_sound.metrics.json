@@ -1,51 +1,51 @@
 {
   "checkpoint": "/home/mixcraftio/Documents/Twente/IOT/Project/HouseholdSoundsClassifier/artifacts/household_sound.pt",
-  "manifest_sha256": "c6d2c848e70f03c3ce163874123a651b3197c9a2b624d784fe8abaac7884af7f",
+  "manifest_sha256": "5a68176fb6609067544d0f780eed6000996dc25b53e328ce5525f5a0b7a03266",
   "epoch": 25,
   "validation": {
     "voices": {
-      "threshold": 0.55,
-      "precision": 0.7742,
-      "recall": 0.8136,
-      "f1": 0.7934,
+      "threshold": 0.62,
+      "precision": 0.8868,
+      "recall": 0.7966,
+      "f1": 0.8393,
       "support": 59
     },
     "machines": {
-      "threshold": 0.64,
-      "precision": 0.5918,
-      "recall": 0.7436,
-      "f1": 0.6591,
+      "threshold": 0.68,
+      "precision": 0.6364,
+      "recall": 0.5385,
+      "f1": 0.5833,
       "support": 39
     },
     "impacts": {
-      "threshold": 0.61,
-      "precision": 0.7551,
-      "recall": 0.7629,
-      "f1": 0.759,
-      "support": 97
+      "threshold": 0.51,
+      "precision": 0.7075,
+      "recall": 0.8427,
+      "f1": 0.7692,
+      "support": 89
     }
   },
   "test": {
     "voices": {
-      "threshold": 0.55,
-      "precision": 0.7966,
-      "recall": 0.8868,
-      "f1": 0.8393,
+      "threshold": 0.62,
+      "precision": 0.9167,
+      "recall": 0.8302,
+      "f1": 0.8713,
       "support": 53
     },
     "machines": {
-      "threshold": 0.64,
-      "precision": 0.5106,
-      "recall": 0.5106,
-      "f1": 0.5106,
+      "threshold": 0.68,
+      "precision": 0.5385,
+      "recall": 0.2979,
+      "f1": 0.3836,
       "support": 47
     },
     "impacts": {
-      "threshold": 0.61,
-      "precision": 0.6667,
-      "recall": 0.8158,
-      "f1": 0.7337,
-      "support": 76
+      "threshold": 0.51,
+      "precision": 0.61,
+      "recall": 0.8971,
+      "f1": 0.7262,
+      "support": 68
     }
   },
   "inference_silence_rms": 0.0005

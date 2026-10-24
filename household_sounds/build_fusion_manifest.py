@@ -42,7 +42,7 @@ def build_fusion_manifest() -> Path:
 
         # Clean category mappings from ESC-50
         is_used = True
-        if cat in ("footsteps", "door_wood_knock", "glass_breaking", "can_opening", "door_wood_creaks"):
+        if cat in ("footsteps", "door_wood_knock", "glass_breaking", "can_opening"):
             labels["impacts"] = 1
         elif cat in ("washing_machine", "vacuum_cleaner"):
             labels["machines"] = 1
